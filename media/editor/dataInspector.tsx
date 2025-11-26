@@ -1,5 +1,6 @@
 import React, { Suspense, useEffect, useMemo, useState } from "react";
-import { useRecoilValue } from "recoil";
+// recoil imports below
+import { useRecoilValue, useSetRecoilState } from "recoil";
 import { Endianness } from "../../shared/protocol";
 import { FocusedElement, getDataCellElement, useDisplayContext } from "./dataDisplayContext";
 import _style from "./dataInspector.css";
@@ -54,6 +55,9 @@ export const DataInspectorAside: React.FC<{ onInspecting?(isInspecting: boolean)
 }) => {
 	const ctx = useDisplayContext();
 	const [inspected, setInspected] = useState<FocusedElement | undefined>(ctx.focusedElement);
+	const selectedBlock = useRecoilValue(select.selectedNvmBlockAtom);
+	const setOffset = useSetRecoilState(select.offset);
+	const columnWidth = useRecoilValue(select.columnWidth);
 
 	useEffect(() => {
 		const disposable = ctx.onDidFocus(focused => {
@@ -67,13 +71,40 @@ export const DataInspectorAside: React.FC<{ onInspecting?(isInspecting: boolean)
 		return () => disposable.dispose();
 	}, []);
 
-	if (!inspected) {
+	if (!inspected && !selectedBlock) {
 		return null;
 	}
 
 	return (
 		<Suspense fallback={null}>
-			<InspectorContents columns={2} offset={inspected.byte} />
+			{/* Show NVM block details if one is selected */}
+			{selectedBlock ? (
+				<div className={style.nvmInspector}>
+					<h3>{selectedBlock.name ?? selectedBlock.id}</h3>
+					<dl>
+						<dt>Offset</dt>
+						<dd>{selectedBlock.offset}</dd>
+						<dt>Length</dt>
+						<dd>{selectedBlock.length}</dd>
+					</dl>
+					<div style={{ whiteSpace: "pre-wrap", overflow: "auto", maxHeight: 200 }}>
+						<code>{JSON.stringify(selectedBlock.raw ?? {}, null, 2)}</code>
+					</div>
+					<div style={{ marginTop: 8 }}>
+						<button
+							onClick={() => {
+								// reveal block start in view and focus it
+								setOffset(select.startOfRowContainingByte(selectedBlock.offset, columnWidth));
+								ctx.focusedElement = new FocusedElement(false, selectedBlock.offset);
+							}}
+						>
+							Reveal Block
+						</button>
+					</div>
+				</div>
+			) : null}
+
+			{inspected ? <InspectorContents columns={2} offset={inspected.byte} /> : null}
 		</Suspense>
 	);
 };

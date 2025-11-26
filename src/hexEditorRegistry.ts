@@ -13,6 +13,7 @@ const EMPTY: never[] = [];
 
 export class HexEditorRegistry extends Disposable {
 	private readonly docs = new Map<HexDocument, Set<ExtensionHostMessageHandler>>();
+	private readonly nvmBlocks = new Map<HexDocument, any[]>();
 	private readonly diffsBuilder = new Map<
 		string,
 		{ refCount: number; value: HexDiffModelBuilder }
@@ -30,6 +31,20 @@ export class HexEditorRegistry extends Disposable {
 	 */
 	public get activeDocument() {
 		return this._activeDocument;
+	}
+
+	/** Associate NVM blocks with a document (stored in the registry). */
+	public setNvmBlocks(document: HexDocument, blocks: any[] | undefined) {
+		if (blocks && blocks.length > 0) {
+			this.nvmBlocks.set(document, blocks);
+		} else {
+			this.nvmBlocks.delete(document);
+		}
+	}
+
+	/** Get NVM blocks previously associated with a document. */
+	public getNvmBlocks(document: HexDocument): any[] {
+		return this.nvmBlocks.get(document) || [];
 	}
 
 	/**

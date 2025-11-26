@@ -15,6 +15,7 @@ export const enum MessageType {
 	SetEditMode,
 	Saved,
 	ReloadFromDisk,
+	SetNvmBlocks,
 	StashDisplayedOffset,
 	GoToOffset,
 	SetHoveredByte,
@@ -83,6 +84,21 @@ export interface ReadyResponseMessage {
 	isLargeFile: boolean;
 	editMode: HexDocumentEditOp.Insert | HexDocumentEditOp.Replace;
 	decorators: HexDecorator[];
+}
+
+/**
+ * Sent from the extension to the webview to provide parsed NVM blocks and
+ * associated metadata for rendering and inspection.
+ */
+export interface SetNvmBlocksMessage {
+	type: MessageType.SetNvmBlocks;
+	blocks: {
+		id: string;
+		name?: string;
+		offset: number;
+		length: number;
+		raw?: any;
+	}[];
 }
 
 export interface SetEditModeMessage {
@@ -202,6 +218,7 @@ export type ToWebviewMessage =
 	| SearchProgressMessage
 	| SavedMessage
 	| ReloadMessage
+	| SetNvmBlocksMessage
 	| GoToOffsetMessage
 	| SetEditsMessage
 	| SetFocusedByteMessage

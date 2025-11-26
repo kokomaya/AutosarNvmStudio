@@ -187,3 +187,25 @@ export const HexDecoratorStyles: { [key in HexDecoratorType]: string } = {
 	[HexDecoratorType.Delete]: style.diffDelete,
 	[HexDecoratorType.Empty]: style.diffEmpty,
 };
+
+/**
+ * Deterministically map a string to a pleasant background color.
+ * Produces an HSL pastel color based on a simple hash of the id.
+ */
+export function colorForString(s: string): string {
+	if (!s) {
+		return 'transparent';
+	}
+	// simple hash
+	let h = 0;
+	for (let i = 0; i < s.length; i++) {
+		h = (h << 5) - h + s.charCodeAt(i);
+		h |= 0; // force 32-bit
+	}
+	h = Math.abs(h);
+	const hue = h % 360;
+	// pastel: high lightness, low-mid saturation
+	const saturation = 60; //%
+	const lightness = 85; //%
+	return `hsl(${hue} ${saturation}% ${lightness}%)`;
+}

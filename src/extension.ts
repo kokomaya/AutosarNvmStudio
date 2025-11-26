@@ -4,6 +4,7 @@
 import { TelemetryReporter } from "@vscode/extension-telemetry";
 import * as vscode from "vscode";
 import { HexDocumentEditOp } from "../shared/hexDocumentModel";
+import { MessageType } from "../shared/protocol";
 import { openCompareSelected } from "./compareSelected";
 import { copyAs } from "./copyAs";
 import { DataInspectorView } from "./dataInspectorView";
@@ -12,6 +13,8 @@ import { HexDiffFSProvider } from "./hexDiffFS";
 import { HexEditorProvider } from "./hexEditorProvider";
 import { HexEditorRegistry } from "./hexEditorRegistry";
 import { prepareLazyInitDiffWorker } from "./initWorker";
+import { parseArxmlFile } from "./nvm/arxmlParser";
+import { mapBlocksToBuffer } from "./nvm/blockMapper";
 import { showSelectBetweenOffsets } from "./selectBetweenOffsets";
 import StatusEditMode from "./statusEditMode";
 import StatusFocus from "./statusFocus";
@@ -121,6 +124,32 @@ export async function activate(context: vscode.ExtensionContext) {
 		},
 	);
 
+	const loadNvmArxmlCommand = vscode.commands.registerCommand("hexEditor.loadNvmArxml", async () => {
+		if (!registry.activeDocument) {
+			vscode.window.showInformationMessage("No active hex document to associate ARXML with.");
+			return;
+		}
+		const uris = await vscode.window.showOpenDialog({ canSelectMany: false, filters: { "ARXML": ["arxml", "xml"] } });
+		if (!uris || uris.length === 0) return;
+		const file = uris[0];
+		try {
+			const blocks = await parseArxmlFile(file.fsPath);
+			const size = await registry.activeDocument.size();
+			if (size === undefined) {
+				vscode.window.showErrorMessage("Cannot map NVM blocks for documents with unknown/infinite size.");
+				return;
+			}
+			const mapped = mapBlocksToBuffer(size, blocks, registry.activeDocument.baseAddress ?? 0);
+			registry.setNvmBlocks(registry.activeDocument, mapped);
+			for (const messaging of registry.getMessaging(registry.activeDocument)) {
+				messaging.sendEvent({ type: MessageType.SetNvmBlocks, blocks: mapped });
+			}
+			vscode.window.showInformationMessage(`Loaded ARXML and mapped ${mapped.length} NVM blocks.`);
+		} catch (e: any) {
+			vscode.window.showErrorMessage(e instanceof Error ? e.message : String(e));
+		}
+	});
+
 	context.subscriptions.push(new StatusEditMode(registry));
 	context.subscriptions.push(new StatusFocus(registry));
 	context.subscriptions.push(new StatusHoverAndSelection(registry));
@@ -132,6 +161,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(telemetryReporter);
 	context.subscriptions.push(copyOffsetAsDec, copyOffsetAsHex);
 	context.subscriptions.push(compareSelectedCommand);
+	context.subscriptions.push(loadNvmArxmlCommand);
 	context.subscriptions.push(
 		vscode.workspace.registerFileSystemProvider("hexdiff", new HexDiffFSProvider(), {
 			isCaseSensitive: typeof process !== 'undefined' && process.platform !== 'win32' && process.platform !== 'darwin',

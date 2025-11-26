@@ -121,7 +121,40 @@ export const codeSettings = selector({
 
 export const decorators = selector({
 	key: "decorators",
-	get: ({ get }) => get(readyQuery).decorators,
+	get: ({ get }) => {
+		const ready = get(readyQuery);
+		const base: HexDecorator[] = ready.decorators ?? [];
+		const nvmBlocks: { id: string; name?: string; offset: number; length: number; raw?: any }[] = get(
+			nvmBlocksAtom,
+		);
+		const nvmDecorators: HexDecorator[] = nvmBlocks.map(b => ({
+			type: HexDecoratorType.Insert,
+			range: { start: b.offset, end: b.offset + b.length },
+		}));
+		const merged = base.concat(nvmDecorators);
+		merged.sort((a, b) => a.range.start - b.range.start);
+		return merged;
+	},
+});
+
+export const nvmBlocksAtom = atom<
+	{ id: string; name?: string; offset: number; length: number; raw?: any }[]
+>({
+	key: "nvmBlocksAtom",
+	default: [],
+	effects_UNSTABLE: [fx => {
+		registerHandler(MessageType.SetNvmBlocks, (msg: any) => {
+			// msg.blocks is expected to be an array of blocks
+			fx.setSelf(msg.blocks ?? []);
+		});
+	}],
+});
+
+export const selectedNvmBlockAtom = atom<
+	{ id: string; name?: string; offset: number; length: number; raw?: any } | undefined
+>({
+	key: "selectedNvmBlockAtom",
+	default: undefined,
 });
 
 export const showReadonlyWarningForEl = atom<HTMLElement | null>({

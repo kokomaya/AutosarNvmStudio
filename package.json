@@ -98,6 +98,12 @@
             "default": false,
             "description": "%hexeditor.showOpenFileButton%"
           }
+          ,
+          "hexeditor.autoLoadArxml": {
+            "type": "boolean",
+            "default": true,
+            "description": "Automatically load an ARXML file from the same directory as the opened binary (if present)."
+          }
         }
       }
     ],
@@ -154,6 +160,11 @@
         "command": "hexEditor.copyOffsetAsDec",
         "category": "%name%",
         "title": "%hexEditor.copyOffsetAsDec%"
+      },
+      {
+        "command": "hexEditor.loadNvmArxml",
+        "category": "%name%",
+        "title": "Load NVM ARXML"
       },
       {
         "command": "hexEditor.compareSelected",

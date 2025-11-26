@@ -28,6 +28,8 @@ import { DataInspectorView } from "./dataInspectorView";
 import { disposeAll } from "./dispose";
 import { HexDocument } from "./hexDocument";
 import { HexEditorRegistry } from "./hexEditorRegistry";
+import { parseArxmlFile } from "./nvm/arxmlParser";
+import { mapBlocksToBuffer } from "./nvm/blockMapper";
 import { ISearchRequest, LiteralSearchRequest, RegexSearchRequest } from "./searchRequest";
 import { flattenBuffers, getBaseName, getCorrectArrayBuffer, randomString } from "./util";
 
@@ -158,6 +160,60 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 		// Add the webview to our internal set of active webviews
 		const handle = this._registry.add(document, messageHandler);
 		webviewPanel.onDidDispose(() => handle.dispose());
+
+		// Auto-detect ARXML files in the same directory as the opened binary.
+		// Behavior:
+		//  - Controlled by the setting `hexeditor.autoLoadArxml` (default: true)
+		//  - Prefer files matching the binary basename (e.g. foo.bin -> foo.arxml)
+		//  - If multiple candidates exist, prompt the user to choose via quick pick
+		(async () => {
+			try {
+				const enabled = vscode.workspace.getConfiguration("hexeditor").get("autoLoadArxml", true);
+				if (!enabled) return;
+
+				const fsPath = document.uri.fsPath;
+				if (!fsPath) return;
+				// compute directory using string-safe operations to avoid importing node 'path'
+				const dir = fsPath.replace(/[\\/][^\\/]+$/, "");
+				const entries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(dir));
+				const candidates = entries
+					.filter(e => {
+						const name = e[0].toLowerCase();
+						return name.endsWith(".arxml") || name.endsWith(".xml");
+					})
+					.map(e => e[0]);
+				if (!candidates || candidates.length === 0) return;
+
+				// Prefer basename match
+				const base = fsPath.replace(/^.*[\\/]/, "").replace(/\.[^/.]+$/, "").toLowerCase();
+				let chosen: string | undefined;
+				const exactMatches = candidates.filter(c => c.replace(/\.[^/.]+$/, "").toLowerCase() === base);
+				if (exactMatches.length === 1) {
+					chosen = exactMatches[0];
+				} else if (exactMatches.length > 1) {
+					// multiple exact matches: prompt
+					chosen = await vscode.window.showQuickPick(exactMatches, { placeHolder: "Select ARXML to load for this binary" });
+				} else if (candidates.length === 1) {
+					chosen = candidates[0];
+				} else {
+					// multiple candidates, none exact: prompt user
+					chosen = await vscode.window.showQuickPick(candidates, { placeHolder: "Select ARXML to load for this binary" });
+				}
+
+				if (!chosen) return;
+				const arxmlPath = vscode.Uri.joinPath(vscode.Uri.file(dir), chosen).fsPath;
+				const blocks = await parseArxmlFile(arxmlPath);
+				const size = await document.size();
+				if (size === undefined) return;
+				const mapped = mapBlocksToBuffer(size, blocks, document.baseAddress ?? 0);
+				this._registry.setNvmBlocks(document, mapped);
+				// send to this webview
+				messageHandler.sendEvent({ type: MessageType.SetNvmBlocks, blocks: mapped });
+				console.debug(`Auto-loaded ARXML ${arxmlPath} -> ${mapped.length} blocks`);
+			} catch (e) {
+				console.warn("Auto NVM ARXML detection failed:", e);
+			}
+		})();
 
 		// Setup initial content for the webview
 		webviewPanel.webview.options = {
@@ -327,6 +383,11 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 		switch (message.type) {
 			// If it's a packet request
 			case MessageType.ReadyRequest:
+				// If there are NVM blocks associated with this document, send them as a follow-up event
+				const nvmBlocks = this._registry.getNvmBlocks(document);
+				if (nvmBlocks && nvmBlocks.length > 0) {
+					messaging.sendEvent({ type: MessageType.SetNvmBlocks, blocks: nvmBlocks });
+				}
 				return {
 					type: MessageType.ReadyResponse,
 					initialOffset: document.baseAddress,

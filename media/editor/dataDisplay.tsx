@@ -6,37 +6,39 @@ import { useRecoilValue, useSetRecoilState } from "recoil";
 import { HexDecorator } from "../../shared/decorators";
 import { EditRangeOp, HexDocumentEditOp } from "../../shared/hexDocumentModel";
 import {
-	CopyFormat,
-	DeleteAcceptedMessage,
-	InspectorLocation,
-	MessageType,
+    CopyFormat,
+    DeleteAcceptedMessage,
+    InspectorLocation,
+    MessageType,
 } from "../../shared/protocol";
 import { binarySearch } from "../../shared/util/binarySearch";
 import { Range } from "../../shared/util/range";
 import { PastePopup } from "./copyPaste";
 import _style from "./dataDisplay.css";
 import {
-	dataCellCls,
-	FocusedElement,
-	useDisplayContext,
-	useIsFocused,
-	useIsHovered,
-	useIsSelected,
-	useIsUnsaved,
+    dataCellCls,
+    FocusedElement,
+    useDisplayContext,
+    useIsFocused,
+    useIsHovered,
+    useIsSelected,
+    useIsUnsaved,
 } from "./dataDisplayContext";
 import { DataInspectorAside } from "./dataInspector";
 import { useGlobalHandler, useLastAsyncRecoilValue } from "./hooks";
 import * as select from "./state";
 import { strings } from "./strings";
 import {
-	clamp,
-	clsx,
-	getAsciiCharacter,
-	getScrollDimensions,
-	HexDecoratorStyles,
-	parseHexDigit,
-	throwOnUndefinedAccessInDev,
+    clamp,
+    clsx,
+    colorForString,
+    getAsciiCharacter,
+    getScrollDimensions,
+    HexDecoratorStyles,
+    parseHexDigit,
+    throwOnUndefinedAccessInDev,
 } from "./util";
+import { VsTooltipPopover } from "./vscodeUi";
 
 const style = throwOnUndefinedAccessInDev(_style);
 
@@ -462,23 +464,35 @@ const DataCell: React.FC<{
 	isChar: boolean;
 	isAppend: boolean;
 	className?: string;
-}> = ({ offset, value, className, children, isChar, isAppend }) => {
+	// optional nvm block metadata attached to this cell's decorator range
+	nvmBlock?: { id: string; name?: string; offset: number; length: number; raw?: any };
+}> = ({ offset, value, className, children, isChar, isAppend, nvmBlock }) => {
 	const elRef = useRef<HTMLSpanElement | null>(null);
 	const focusedElement = new FocusedElement(isChar, offset);
 	const ctx = useDisplayContext();
 	const setReadonlyWarning = useSetRecoilState(select.showReadonlyWarningForEl);
 	const editMode = useRecoilValue(select.editMode);
 
+	const setSelectedNvmBlock = useSetRecoilState(select.selectedNvmBlockAtom);
+	const setOffset = useSetRecoilState(select.offset);
+
+	const [anchor, setAnchor] = useState<Element | null>(null);
 	const onMouseEnter = useCallback(() => {
 		ctx.hoveredByte = focusedElement;
 		if (!isAppend && ctx.isSelecting !== undefined) {
 			ctx.replaceLastSelectionRange(Range.inclusive(ctx.isSelecting, offset));
 		}
-	}, [offset, focusedElement]);
+		if (nvmBlock && elRef.current) {
+			setAnchor(elRef.current);
+		}
+	}, [offset, focusedElement, nvmBlock]);
 
 	const onMouseLeave = useCallback(
 		(e: React.MouseEvent) => {
 			ctx.hoveredByte = undefined;
+			if (nvmBlock) {
+				setAnchor(null);
+			}
 			if (!isAppend && e.buttons & 1 && ctx.isSelecting === undefined) {
 				ctx.isSelecting = offset;
 				if (e.ctrlKey || e.metaKey) {
@@ -488,7 +502,7 @@ const DataCell: React.FC<{
 				}
 			}
 		},
-		[offset, isAppend],
+		[offset, isAppend, nvmBlock],
 	);
 
 	const onMouseDown = useCallback(
@@ -530,6 +544,14 @@ const DataCell: React.FC<{
 		},
 		[focusedElement.key, offset],
 	);
+
+	const onClick = useCallback(() => {
+		if (nvmBlock) {
+			setSelectedNvmBlock(nvmBlock);
+		} else {
+			setSelectedNvmBlock(undefined);
+		}
+	}, [nvmBlock]);
 
 	const isFocused = useIsFocused(focusedElement);
 	useEffect(() => {
@@ -662,11 +684,14 @@ const DataCell: React.FC<{
 				? style.dataCellInsertBefore
 				: style.dataCellInsertMiddle;
 	return (
+		<>
 		<span
 			ref={elRef}
 			tabIndex={0}
 			onFocus={onFocus}
 			onBlur={onBlur}
+			onClick={onClick}
+			title={undefined}
 			className={clsx(
 				isChar && style.dataCellChar,
 				dataCellCls,
@@ -683,9 +708,47 @@ const DataCell: React.FC<{
 			onMouseLeave={onMouseLeave}
 			onKeyDown={onKeyDown}
 			data-key={focusedElement.key}
+			style={nvmBlock ? { background: colorForString(nvmBlock.id) } : undefined}
 		>
 			{firstOctetOfEdit !== undefined ? firstOctetOfEdit.toString(16).toUpperCase() : children}
-		</span>
+	</span>
+		{nvmBlock && (
+			<VsTooltipPopover
+				anchor={anchor}
+				hide={() => setAnchor(null)}
+				visible={!!anchor}
+				className={style.nvmTooltip}
+			>
+				<div className={style.nvmTooltipContent}>
+					<div className={style.nvmTooltipTitle}>{nvmBlock.id}</div>
+					{nvmBlock.name && <div className={style.nvmTooltipSubtitle}>{nvmBlock.name}</div>}
+					<div className={style.nvmTooltipDetails}>
+						Offset: 0x{nvmBlock.offset.toString(16).toUpperCase()} • {nvmBlock.length} bytes
+					</div>
+					<div className={style.nvmTooltipActions}>
+						<button
+							className={style.vsButton}
+							onClick={() => {
+								setSelectedNvmBlock(nvmBlock);
+								setAnchor(null);
+							}}
+						>
+							Select
+						</button>
+						<button
+							className={style.vsButton}
+							onClick={() => {
+								setOffset(nvmBlock.offset);
+								setAnchor(null);
+							}}
+						>
+							Reveal
+						</button>
+					</div>
+				</div>
+			</VsTooltipPopover>
+		)}
+		</>
 	);
 };
 
@@ -702,6 +765,8 @@ const DataRowContents: React.FC<{
 	for (const byte of rawBytes) {
 		memoValue += "," + byte;
 	}
+
+	const nvmBlocks = useRecoilValue(select.nvmBlocksAtom);
 
 	const { bytes, chars } = useMemo(() => {
 		const bytes: React.ReactChild[] = [];
@@ -742,6 +807,14 @@ const DataRowContents: React.FC<{
 				continue;
 			}
 
+			// find matching nvm block metadata for this decorator range, if any
+			let nvmBlock = undefined;
+			if (decorator) {
+				nvmBlock = nvmBlocks.find(
+					b => b.offset === decorator!.range.start && b.offset + b.length === decorator!.range.end,
+				);
+			}
+
 			bytes.push(
 				<DataCell
 					key={i}
@@ -750,6 +823,7 @@ const DataRowContents: React.FC<{
 					isChar={false}
 					isAppend={false}
 					value={value}
+					nvmBlock={nvmBlock}
 				>
 					{value.toString(16).padStart(2, "0").toUpperCase()}
 				</DataCell>,
@@ -768,6 +842,7 @@ const DataRowContents: React.FC<{
 							decorator !== undefined && HexDecoratorStyles[decorator.type],
 						)}
 						value={value}
+						nvmBlock={nvmBlock}
 					>
 						{char === undefined ? "." : char}
 					</DataCell>,

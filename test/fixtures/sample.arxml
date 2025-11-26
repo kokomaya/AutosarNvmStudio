@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<AUTOSAR>
+  <NVM-BLOCKS>
+    <NVM-BLOCK>
+      <SHORT-NAME>BlockA</SHORT-NAME>
+      <START-OFFSET>0</START-OFFSET>
+      <SIZE>16</SIZE>
+    </NVM-BLOCK>
+    <NVM-BLOCK>
+      <SHORT-NAME>BlockB</SHORT-NAME>
+      <START-OFFSET>64</START-OFFSET>
+      <SIZE>32</SIZE>
+    </NVM-BLOCK>
+  </NVM-BLOCKS>
+</AUTOSAR>

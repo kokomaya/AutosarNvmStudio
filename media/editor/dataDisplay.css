@@ -129,3 +129,30 @@
 .data-cell-char {
 	width: calc(var(--cell-size) * 0.7) !important;
 }
+
+/* NVM tooltip styles */
+.nvmTooltip {
+	padding: 6px 8px;
+	min-width: 180px;
+}
+.nvmTooltipContent {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+.nvmTooltipTitle {
+	font-weight: 600;
+}
+.nvmTooltipSubtitle {
+	font-size: 0.9em;
+	color: var(--vscode-editorLineNumber-foreground);
+}
+.nvmTooltipDetails {
+	font-size: 0.85em;
+	color: var(--vscode-editor-foreground);
+}
+.nvmTooltipActions {
+	display: flex;
+	gap: 6px;
+	justify-content: flex-end;
+}

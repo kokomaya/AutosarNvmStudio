@@ -24,3 +24,15 @@
 .endianness-toggle-container input {
 	margin: 0 0.3rem 0 0;
 }
+
+.nvmInspector {
+	padding: 0.5rem;
+}
+
+.nvmInspector h3 {
+	margin: 0 0 0.5rem 0;
+}
+
+.nvmInspector dl {
+	margin: 0 0 0.5rem 0;
+}
