@@ -6,6 +6,9 @@ const fileImports = [
 	() => import("./searchRequest.test"),
 	() => import("./range.test"),
 	() => import("./nvm.test"),
+	() => import("./nvmKernel.test"),
+	() => import("./nvmLoaders.test"),
+	() => import("./nvmArxml.test"),
 ];
 
 export async function run(): Promise<void> {

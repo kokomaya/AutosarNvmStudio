@@ -1,0 +1,24 @@
+{
+	"id": "example.linear.crc16",
+	"name": "Example linear NVM (16-bit id/len header + CRC16 trailer)",
+	"endian": "little",
+	"container": { "kind": "none" },
+	"block": {
+		"iterate": "sequential",
+		"start": 0,
+		"align": 1,
+		"header": [
+			{ "name": "blockId", "offset": 0, "size": 2, "role": "blockId" },
+			{ "name": "length", "offset": 2, "size": 2, "role": "payloadLength" }
+		],
+		"payload": { "after": "header", "length": "$length" },
+		"endMarker": { "at": 0, "size": 2, "value": 65535 }
+	},
+	"integrity": {
+		"crc": {
+			"preset": "CRC16-CCITT-FALSE",
+			"range": "payload",
+			"stored": { "source": "trailer", "size": 2, "endian": "little" }
+		}
+	}
+}

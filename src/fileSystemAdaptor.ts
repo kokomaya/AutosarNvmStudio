@@ -5,9 +5,61 @@ import type fs from "fs";
 import type os from "os";
 import * as vscode from "vscode";
 import { FileAccessor, FileWriteOp } from "../shared/fileAccessor";
+import { loadHexImage } from "../shared/nvm/loaders";
 
 declare function require(_name: "fs"): typeof fs;
 declare function require(_name: "os"): typeof os;
+
+/** Text container formats (Motorola S-record / Intel HEX) we decode on open. */
+const hexTextExtensions = new Set([
+	".mot",
+	".srec",
+	".s19",
+	".s28",
+	".s37",
+	".s1",
+	".s2",
+	".s3",
+	".hex",
+	".ihex",
+	".ihx",
+]);
+
+function uriExtension(uri: vscode.Uri): string {
+	const path = uri.path;
+	const slash = path.lastIndexOf("/");
+	const name = slash >= 0 ? path.slice(slash + 1) : path;
+	const dot = name.lastIndexOf(".");
+	return dot > 0 ? name.slice(dot).toLowerCase() : "";
+}
+
+/**
+ * If the URI points at a Motorola S-record / Intel HEX file, decode it to its
+ * underlying memory image and return the flat bytes. Raw formats (.bin, ...)
+ * and anything that fails to decode return undefined so the caller falls back
+ * to serving the file verbatim.
+ */
+async function tryLoadDecodedImage(uri: vscode.Uri): Promise<Uint8Array | undefined> {
+	if (!hexTextExtensions.has(uriExtension(uri))) {
+		return undefined;
+	}
+	let raw: Uint8Array;
+	try {
+		raw = await vscode.workspace.fs.readFile(uri);
+	} catch {
+		return undefined;
+	}
+	try {
+		const image = loadHexImage(new TextDecoder("ascii").decode(raw));
+		if (image.span === 0) {
+			return undefined;
+		}
+		return image.toFlat().bytes;
+	} catch {
+		// Not a valid S-record/Intel HEX file after all; show it verbatim.
+		return undefined;
+	}
+}
 
 export const accessFile = async (
 	uri: vscode.Uri,
@@ -20,6 +72,16 @@ export const accessFile = async (
 	if (uri.scheme === "vscode-debug-memory") {
 		const { permissions = 0 } = await vscode.workspace.fs.stat(uri);
 		return new DebugFileAccessor(uri, !!(permissions & vscode.FilePermission.Readonly));
+	}
+
+	// Decode address-based text container formats (e.g. NVM dumps saved as
+	// Motorola S-record) so the editor shows the actual memory bytes rather
+	// than the record/address text. The diff scheme is left untouched.
+	if (uri.scheme !== "hexdiff") {
+		const decoded = await tryLoadDecodedImage(uri);
+		if (decoded) {
+			return new DecodedImageFileAccessor(uri, decoded);
+		}
 	}
 
 	// try to use native file access for local files to allow large files to be handled efficiently
@@ -346,6 +408,59 @@ class UntitledFileAccessor extends SimpleFileAccessor {
 
 	public override getSize() {
 		return Promise.resolve(this.contents.byteLength);
+	}
+}
+
+/**
+ * Read-only accessor that serves an already-decoded memory image (from a
+ * Motorola S-record / Intel HEX container). Writing back would require
+ * re-encoding to the source text format, which is not yet supported, so the
+ * document is presented as read-only.
+ */
+class DecodedImageFileAccessor implements FileAccessor {
+	public readonly uri: string;
+	public readonly supportsIncremetalAccess = false;
+	public readonly isReadonly = true;
+	public readonly pageSize = filePageSize;
+
+	constructor(
+		uri: vscode.Uri,
+		private readonly bytes: Uint8Array,
+	) {
+		this.uri = uri.toString();
+	}
+
+	watch(onDidChange: () => void, onDidDelete: () => void): vscode.Disposable {
+		return watchWorkspaceFile(this.uri, onDidChange, onDidDelete);
+	}
+
+	async getSize(): Promise<number> {
+		return this.bytes.length;
+	}
+
+	async read(offset: number, target: Uint8Array): Promise<number> {
+		if (offset >= this.bytes.length) {
+			return 0;
+		}
+		const cpy = Math.min(target.length, this.bytes.length - offset);
+		target.set(this.bytes.subarray(offset, offset + cpy));
+		return cpy;
+	}
+
+	async writeStream(): Promise<void> {
+		throw new Error("Decoded S-record/Intel HEX images are read-only");
+	}
+
+	async writeBulk(): Promise<void> {
+		throw new Error("Decoded S-record/Intel HEX images are read-only");
+	}
+
+	public invalidate(): void {
+		// no-op: the decoded image is captured at open time.
+	}
+
+	dispose() {
+		// no-op
 	}
 }
 

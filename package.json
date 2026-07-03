@@ -262,7 +262,8 @@
     "lint": "eslint src",
     "fmt": "prettier --write \"{src,media,shared}/**/*.{ts,tsx}\" && npm run lint -- --fix",
     "watch": "node .esbuild.config.js --watch",
-    "test": "tsc --noEmit && node ./src/test/runTest.js"
+    "test": "tsc --noEmit && node ./src/test/runTest.js",
+    "nvmcli:build": "esbuild tools/nvmcli.ts --bundle --platform=node --outfile=dist/nvmcli.js"
   },
   "devDependencies": {
     "@types/chai": "^5",
