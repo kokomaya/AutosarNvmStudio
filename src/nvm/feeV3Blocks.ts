@@ -10,16 +10,110 @@
  */
 
 import {
-    FeeV3Chunk,
-    feeLcfgByTag,
-    loadHexImage,
-    parseFeeLcfg,
-    parseVectorFeeV3,
+	FeeV3Chunk,
+	FieldLinkSpec,
+	feeLcfgByTag,
+	loadHexImage,
+	parseFeeLcfg,
+	parseVectorFeeV3,
 } from "../../shared/nvm";
 import { NvmBlockInfo, NvmFieldInfo } from "../../shared/protocol";
 
 /** Size of the FEE V3 chunk header: tag(2) reserved(2) size(4). */
 const CHUNK_HEADER_SIZE = 8;
+
+/** One byte-range attribute of a region, relative to the region start. */
+export interface FeeV3FieldTemplate {
+	name: string;
+	kind: string;
+	offset: number;
+	length: number;
+	/** Explicit background color (any CSS color); overrides the palette. */
+	color?: string;
+	/**
+	 * Marks this field as an in-file link. For a slot's `linkTarget` this makes
+	 * the slot jump to the data chunk it points at. The chunk offset is already
+	 * known from the link-table walk, so `encoding`/`transform` are optional.
+	 */
+	link?: FieldLinkSpec;
+}
+
+/**
+ * The byte STRUCTURE of the fixed regions the Vector parser locates. This lives
+ * in configuration, not code: the parser only *finds* the regions (the
+ * link-table algorithm); how each region splits into named/colored fields comes
+ * from here. Any part omitted falls back to {@link DEFAULT_FEE_V3_STRUCTURE}.
+ */
+export interface FeeV3StructureTemplate {
+	/** Sector header (length = `alignment`). Offsets relative to sector start. */
+	sectorHeader?: FeeV3FieldTemplate[];
+	/** A used link-table slot (length = `alignment`). Offsets relative to slot. */
+	slot?: FeeV3FieldTemplate[];
+	/** An unused link-table slot. */
+	slotEmpty?: FeeV3FieldTemplate[];
+	/** A data-chunk header (length = 8). Offsets relative to the header. */
+	chunkHeader?: FeeV3FieldTemplate[];
+	/** Name/kind for the alignment padding + start marker (length is dynamic). */
+	marker?: { name: string; kind: string; color?: string };
+	/** Name/kind for the chunk payload (length is dynamic = net payload length). */
+	payload?: { name: string; kind: string; color?: string };
+}
+
+/** The default field structure (used when the descriptor omits a part). */
+export const DEFAULT_FEE_V3_STRUCTURE: Required<FeeV3StructureTemplate> = {
+	sectorHeader: [
+		{ name: "Counter / id", kind: "counter", offset: 0, length: 1 },
+		{ name: "ltSize", kind: "ltSize", offset: 1, length: 2 },
+		{ name: "Header status / complement", kind: "status", offset: 3, length: 5 },
+	],
+	slot: [
+		{ name: "linkTarget", kind: "linkTarget", offset: 0, length: 4, link: { encoding: "u32le" } },
+		{ name: "payloadSize", kind: "payloadSize", offset: 4, length: 2 },
+		{ name: "pad", kind: "pad", offset: 6, length: 2 },
+	],
+	slotEmpty: [{ name: "unused slot", kind: "linkEmpty", offset: 0, length: 8 }],
+	chunkHeader: [
+		{ name: "tag", kind: "tag", offset: 0, length: 2 },
+		{ name: "reserved", kind: "reserved", offset: 2, length: 2 },
+		{ name: "size", kind: "size", offset: 4, length: 4 },
+	],
+	marker: { name: "Padding / marker", kind: "marker" },
+	payload: { name: "Payload", kind: "payload" },
+};
+
+/** Tunable Vector FEE V3 container parameters (from a `*.nvmlayout.json`). */
+export interface FeeV3BlockOptions {
+	/** Address alignment in bytes (MICROSAR RAD6xx default 8). */
+	alignment?: number;
+	/** Number of flash sectors that make up the FEE partition (default 2). */
+	numberOfSectors?: number;
+	/** Size of a single sector in bytes (default 0x30000). */
+	sectorSize?: number;
+	/** Field structure of each region (config-driven; defaults applied per part). */
+	structure?: FeeV3StructureTemplate;
+}
+
+/** Instantiate template fields at `regionOffset`, tagged with `unit`. */
+function applyTemplate(
+	template: FeeV3FieldTemplate[],
+	regionOffset: number,
+	unit: string,
+	prefix = "",
+	link?: { targetOffset: number; label?: string },
+): NvmFieldInfo[] {
+	return template.map(t => ({
+		name: prefix + t.name,
+		kind: t.kind,
+		offset: regionOffset + t.offset,
+		length: t.length,
+		color: t.color,
+		unit,
+		// A template field marked with `link` becomes a jump to the resolved
+		// chunk. The link-table walk already found the chunk's editor offset,
+		// so no re-decode is needed here.
+		link: t.link && link ? { targetOffset: link.targetOffset, label: t.link.label ?? link.label } : undefined,
+	}));
+}
 
 /**
  * Parse an S-record / Intel HEX image and return one {@link NvmBlockInfo} per
@@ -28,7 +122,11 @@ const CHUNK_HEADER_SIZE = 8;
  *
  * Returns an empty array when the text is not a FEE V3 container.
  */
-export function buildFeeV3Blocks(imageText: string, feeLcfgSource?: string): NvmBlockInfo[] {
+export function buildFeeV3Blocks(
+	imageText: string,
+	feeLcfgSource?: string,
+	options: FeeV3BlockOptions = {},
+): NvmBlockInfo[] {
 	let image;
 	try {
 		image = loadHexImage(imageText);
@@ -41,7 +139,11 @@ export function buildFeeV3Blocks(imageText: string, feeLcfgSource?: string): Nvm
 
 	let result;
 	try {
-		result = parseVectorFeeV3(image);
+		result = parseVectorFeeV3(image, {
+			alignment: options.alignment,
+			numberOfSectors: options.numberOfSectors,
+			sectorSize: options.sectorSize,
+		});
 	} catch {
 		return [];
 	}
@@ -49,13 +151,18 @@ export function buildFeeV3Blocks(imageText: string, feeLcfgSource?: string): Nvm
 		return [];
 	}
 
+	// The field breakdown of each region comes from config (defaults per part).
+	const struct: Required<FeeV3StructureTemplate> = {
+		...DEFAULT_FEE_V3_STRUCTURE,
+		...(options.structure ?? {}),
+	};
+
 	const byTag = feeLcfgSource ? feeLcfgByTag(parseFeeLcfg(feeLcfgSource)) : undefined;
 	const base = result.baseAddress;
 	const blocks: NvmBlockInfo[] = [];
 
-	// 1) Sector structure: header + the sector/link table (one 8-byte slot per
-	// block index). This colors the region at the start of every sector so the
-	// user can see and click the table that maps slots -> data blocks.
+	// 1) Sector structure: header + the sector/link table (one slot per block
+	// index). The parser locates these regions; `struct` describes their fields.
 	const alignment = result.alignment;
 	for (const section of result.sections) {
 		const sectionOffset = section.linkTableAddress - alignment - base;
@@ -70,13 +177,7 @@ export function buildFeeV3Blocks(imageText: string, feeLcfgSource?: string): Nvm
 		}
 
 		const headerUnit = `sector${section.bank}:header`;
-		const fields: NvmFieldInfo[] = [
-			// Sector header sub-fields (verified: id/counter, then ltSize; the
-			// trailing bytes carry a one's-complement check of the first bytes).
-			{ name: `Counter / id (0x${section.id.toString(16)})`, kind: "counter", offset: sectionOffset, length: 1, unit: headerUnit },
-			{ name: `ltSize (${section.ltSize} slots)`, kind: "ltSize", offset: sectionOffset + 1, length: 2, unit: headerUnit },
-			{ name: "Header status / complement", kind: "status", offset: sectionOffset + 3, length: alignment - 3, unit: headerUnit },
-		];
+		const fields: NvmFieldInfo[] = applyTemplate(struct.sectorHeader, sectionOffset, headerUnit);
 		for (let slot = 0; slot < section.ltSize; slot++) {
 			const slotOffset = linkTableOffset + slot * alignment;
 			const slotUnit = `sector${section.bank}:slot${slot}`;
@@ -84,32 +185,16 @@ export function buildFeeV3Blocks(imageText: string, feeLcfgSource?: string): Nvm
 			if (c) {
 				const def = byTag?.get(c.tag);
 				const label = def?.name ?? `tag ${c.tag}`;
-				// Link-table slot: linkTarget(4 LE) payloadSize(2 LE) pad(2).
+				// The slot's linkTarget points at this chunk; expose the resolved
+				// editor offset so a linkTarget field can jump straight to it.
+				const chunkHeaderOffset = c.headerAddress - base;
+				const link =
+					chunkHeaderOffset >= 0 ? { targetOffset: chunkHeaderOffset, label } : undefined;
 				fields.push(
-					{
-						name: `Slot ${slot} → ${label}: linkTarget`,
-						kind: "linkTarget",
-						offset: slotOffset,
-						length: 4,
-						unit: slotUnit,
-					},
-					{
-						name: `Slot ${slot} → ${label}: payloadSize (${def?.payloadLength ?? c.size} B)`,
-						kind: "payloadSize",
-						offset: slotOffset + 4,
-						length: 2,
-						unit: slotUnit,
-					},
-					{ name: `Slot ${slot} → ${label}: pad`, kind: "pad", offset: slotOffset + 6, length: 2, unit: slotUnit },
+					...applyTemplate(struct.slot, slotOffset, slotUnit, `Slot ${slot} → ${label}: `, link),
 				);
 			} else {
-				fields.push({
-					name: `Slot ${slot} (unused)`,
-					kind: "linkEmpty",
-					offset: slotOffset,
-					length: alignment,
-					unit: slotUnit,
-				});
+				fields.push(...applyTemplate(struct.slotEmpty, slotOffset, slotUnit, `Slot ${slot}: `));
 			}
 		}
 
@@ -129,7 +214,7 @@ export function buildFeeV3Blocks(imageText: string, feeLcfgSource?: string): Nvm
 		});
 	}
 
-	// 2) Data blocks: each FEE chunk split into header / marker / payload.
+	// 2) Data blocks: the parser locates each chunk; `struct` describes the fields.
 	for (const c of result.chunks) {
 		const def = byTag?.get(c.tag);
 		const netLength = def?.payloadLength ?? c.size;
@@ -145,17 +230,26 @@ export function buildFeeV3Blocks(imageText: string, feeLcfgSource?: string): Nvm
 		const blockLength = payloadOffset + netLength - headerOffset;
 
 		const blockUnit = `tag${c.tag}`;
-		const fields: NvmFieldInfo[] = [
-			// Chunk header: tag(2 LE) reserved(2) size(4 LE).
-			{ name: `tag (${c.tag})`, kind: "tag", offset: headerOffset, length: 2, unit: blockUnit },
-			{ name: "reserved", kind: "reserved", offset: headerOffset + 2, length: 2, unit: blockUnit },
-			{ name: `size (${c.size} B)`, kind: "size", offset: headerOffset + 4, length: 4, unit: blockUnit },
-		];
+		const fields: NvmFieldInfo[] = applyTemplate(struct.chunkHeader, headerOffset, blockUnit);
 		if (markerLength > 0) {
-			fields.push({ name: "Padding / marker", kind: "marker", offset: markerOffset, length: markerLength, unit: blockUnit });
+			fields.push({
+				name: struct.marker.name,
+				kind: struct.marker.kind,
+				offset: markerOffset,
+				length: markerLength,
+				color: struct.marker.color,
+				unit: blockUnit,
+			});
 		}
 		if (netLength > 0) {
-			fields.push({ name: "Payload", kind: "payload", offset: payloadOffset, length: netLength, unit: blockUnit });
+			fields.push({
+				name: struct.payload.name,
+				kind: struct.payload.kind,
+				offset: payloadOffset,
+				length: netLength,
+				color: struct.payload.color,
+				unit: blockUnit,
+			});
 		}
 
 		blocks.push({

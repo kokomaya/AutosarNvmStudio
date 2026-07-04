@@ -166,8 +166,12 @@ export interface NvmFieldRange {
 	end: number;
 	kind: string;
 	fieldName: string;
+	/** Config-resolved background color, if any. */
+	color?: string;
 	/** Highlight unit this field belongs to (block / sector header / table slot). */
 	unit: string;
+	/** Resolved in-file jump target (editor offset), when this field is a link. */
+	link?: { targetOffset: number; label?: string };
 	block: NvmBlockInfo;
 }
 
@@ -190,7 +194,9 @@ export const nvmFieldRanges = selector<NvmFieldRange[]>({
 					end: f.offset + f.length,
 					kind: f.kind,
 					fieldName: f.name,
+					color: (f as { color?: string }).color,
 					unit: (f as { unit?: string }).unit ?? block.id,
+					link: (f as { link?: { targetOffset: number; label?: string } }).link,
 					block,
 				});
 			}

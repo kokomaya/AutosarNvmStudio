@@ -211,34 +211,11 @@ export function colorForString(s: string): string {
 }
 
 /**
- * Fixed palette mapping an NVM field "kind" (attribute) to a distinct pastel
- * background color, so the header / marker / payload / crc parts of a block are
- * each visually separable.
+ * Background color for an NVM field. Config-driven: uses the `color` resolved by
+ * the descriptor (its own field color or `palette[kind]`). When the config
+ * supplies none, falls back to a deterministic auto color from the kind — no
+ * per-kind colors are hardcoded here.
  */
-const nvmFieldColors: { [kind: string]: string } = {
-	// data chunk header sub-fields
-	tag: "hsl(210 70% 80%)", // blue
-	reserved: "hsl(0 0% 85%)", // grey
-	size: "hsl(280 55% 85%)", // purple
-	header: "hsl(210 70% 82%)", // blue (legacy coarse header)
-	marker: "hsl(45 80% 80%)", // amber
-	payload: "hsl(140 55% 82%)", // green
-	crc: "hsl(260 55% 85%)", // violet
-	padding: "hsl(0 0% 88%)", // grey
-	// sector header sub-fields
-	sectorHeader: "hsl(0 75% 82%)", // red
-	counter: "hsl(0 75% 80%)", // red — sector counter / id
-	ltSize: "hsl(25 85% 78%)", // orange — block count
-	status: "hsl(340 55% 85%)", // pink — header complement / status
-	// sector-table slot sub-fields
-	link: "hsl(180 55% 78%)", // teal — used slot (legacy coarse)
-	linkTarget: "hsl(180 55% 76%)", // teal — link target address
-	payloadSize: "hsl(200 60% 80%)", // cyan-blue — payload size
-	pad: "hsl(0 0% 84%)", // grey — slot padding
-	linkEmpty: "hsl(0 0% 92%)", // faint grey — unused slot
-};
-
-/** Background color for an NVM field, keyed by its kind. */
-export function colorForNvmField(kind: string): string {
-	return nvmFieldColors[kind] ?? colorForString(kind);
+export function colorForNvmField(kind: string, color?: string): string {
+	return color ?? colorForString(kind);
 }

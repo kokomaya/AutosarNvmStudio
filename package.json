@@ -103,6 +103,11 @@
             "type": "boolean",
             "default": true,
             "description": "Automatically load an ARXML file from the same directory as the opened binary (if present)."
+          },
+          "hexeditor.nvm.allowExternalEngines": {
+            "type": "boolean",
+            "default": false,
+            "description": "Allow NVM layout descriptors to run an external engine script (`engineScript`) from the workspace. This EXECUTES workspace JavaScript in the desktop extension host. Requires a trusted workspace and a one-time per-file confirmation. Not available in web/virtual environments."
           }
         }
       }

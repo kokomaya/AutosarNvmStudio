@@ -117,6 +117,9 @@ const lookahead = 16;
  */
 const NvmByteExplain: React.FC<{ offset: number }> = ({ offset }) => {
 	const ranges = useRecoilValue(select.nvmFieldRanges);
+	const ctx = useDisplayContext();
+	const setOffset = useSetRecoilState(select.offset);
+	const columnWidth = useRecoilValue(select.columnWidth);
 	const field = useMemo(
 		() => ranges.find(r => offset >= r.start && offset < r.end),
 		[ranges, offset],
@@ -148,7 +151,26 @@ const NvmByteExplain: React.FC<{ offset: number }> = ({ offset }) => {
 						</dd>
 					</>
 				)}
+				{field.link && (
+					<>
+						<dt>Link</dt>
+						<dd>
+							→ 0x{field.link.targetOffset.toString(16).toUpperCase()}
+							{field.link.label ? ` (${field.link.label})` : ""}
+						</dd>
+					</>
+				)}
 			</dl>
+			{field.link && (
+				<button
+					onClick={() => {
+						setOffset(select.startOfRowContainingByte(field.link!.targetOffset, columnWidth));
+						ctx.focusedElement = new FocusedElement(false, field.link!.targetOffset);
+					}}
+				>
+					Jump →{field.link.label ? ` ${field.link.label}` : ""}
+				</button>
+			)}
 		</div>
 	);
 };

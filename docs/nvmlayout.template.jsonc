@@ -1,0 +1,115 @@
+// ============================================================================
+// NVM layout descriptor TEMPLATE
+// ----------------------------------------------------------------------------
+// HOW TO USE
+//   1. Copy this file next to your dump, or into a `conf/` folder beside it
+//      (the editor searches: the dump's folder, ./conf/, and ../conf/).
+//   2. Rename it to end with EXACTLY `.nvmlayout.json`  (e.g. myecu.nvmlayout.json).
+//   3. Remove ALL comments — a real *.nvmlayout.json must be STRICT JSON
+//      (no // or /* */). To keep notes in the real file, use "_comment" keys;
+//      any key starting with "_" is ignored by the loader.
+//   4. Keep only the ONE descriptor you need (delete the other example), or keep
+//      an array of several — the loader accepts a single object OR an array.
+//   5. Build + reload the extension host (F5 / "Developer: Reload Window"),
+//      then open the dump. Click a byte to render its unit.
+//
+// IMPORTANT: rendering is fully config-driven. With no matching descriptor,
+// nothing is coloured — the file looks like the plain hex editor.
+// ============================================================================
+
+// ----------------------------------------------------------------------------
+// EXAMPLE A — Vector MICROSAR FEE V3 (link-table format).
+// You cannot describe Vector with plain offsets; instead point at the
+// "vector-fee-v3" ENGINE. Declare the generated `Fee_Lcfg.c` under "sources"
+// (the core reads it and hands it to the engine) to get real block names;
+// without it, blocks are named "Tag N".
+// ----------------------------------------------------------------------------
+{
+  "vendor": "My ECU (Vector FEE V3)",       // REQUIRED. Free text; used as a name prefix.
+  "provider": "vector-fee-v3",              // Selects the Vector engine. When set, "blocks" is ignored.
+  "sources": {                              // Aux files the adapter needs: logicalName -> fileName.
+    "feeLcfg": "Fee_Lcfg.c"                 //   the core reads it (dump folder / ./conf / ../conf) and
+  },                                        //   hands the content to the engine for block NAMES + lengths.
+  "match": {                                // OPTIONAL gate. Omit to match any opened S-record/HEX dump.
+    "ext": [".mot", ".s19"],                //   file extensions WITH the dot
+    "fileNameIncludes": []                  //   case-insensitive name substrings (e.g. ["nvm"])
+  },
+  "palette": {                              // OPTIONAL. Style lives in config: kind -> any CSS color.
+    "counter": "hsl(0 75% 80%)",            //   a kind with no entry (and no per-field "color")
+    "payload": "hsl(140 55% 82%)"           //   gets a deterministic auto color instead.
+  },
+  "options": {                              // OPTIONAL. Omit to use the defaults shown.
+    "alignment": 8,                         //   bytes; MICROSAR RAD6xx = 8
+    "numberOfSectors": 2,
+    "sectorSize": 196608                    //   bytes. JSON has no hex -> decimal (0x30000 = 196608)
+  }
+}
+
+// ----------------------------------------------------------------------------
+// EXAMPLE B — Any other vendor, described by hand (no code, no "provider").
+// Use this for top-down sequential dumps, dual-ended rings, or fixed tables.
+// ----------------------------------------------------------------------------
+{
+  "vendor": "Acme NVM",                     // REQUIRED. Used as the block/unit name prefix.
+  "match": { "ext": [".bin", ".mot"] },     // OPTIONAL gate (see Example A).
+
+  // OPTIONAL. Absolute address that maps to editor offset 0.
+  // editorOffset = absoluteAddr - imageBase. JSON has no hex -> decimal.
+  "baseAddress": 0,
+
+  // OPTIONAL. "sequential" (top-down) or "dualEnded". Informational — the
+  // per-block "from" field is what actually drives auto placement.
+  "arrangement": "sequential",
+
+  // REQUIRED (when no "provider"). Each entry is one clickable UNIT.
+  "blocks": [
+    {
+      // Auto-placed from the top (no "offset", no "from").
+      "name": "BootBlock",
+      "length": 32,                         // bytes
+      // OPTIONAL "fields" = coloured attributes; offsets are RELATIVE to the block.
+      "fields": [
+        { "name": "magic",   "kind": "header",  "offset": 0,  "length": 4 },
+        { "name": "version", "kind": "size",    "offset": 4,  "length": 2 },
+        { "name": "flags",   "kind": "status",  "offset": 6,  "length": 2 },
+        { "name": "data",    "kind": "payload", "offset": 8,  "length": 22 },
+        { "name": "crc16",   "kind": "crc",     "offset": 30, "length": 2 }
+      ]
+    },
+    {
+      // No "fields" -> the whole block is one "payload" attribute.
+      "name": "Calibration",
+      "length": 512
+    },
+    {
+      // Explicit "offset" (editor byte offset) overrides auto placement.
+      "name": "FixedTable",
+      "offset": 1024,
+      "length": 64
+    },
+    {
+      // "from":"bottom" grows UP from the end of the image
+      // (use this for "both ends toward the middle" layouts).
+      "name": "TailRecord",
+      "length": 16,
+      "from": "bottom",
+      "fields": [
+        { "name": "counter",  "kind": "counter",  "offset": 0,  "length": 1 },
+        { "name": "reserved", "kind": "reserved", "offset": 1,  "length": 3 },
+        { "name": "payload",  "kind": "payload",  "offset": 4,  "length": 10 },
+        { "name": "crc",      "kind": "crc",      "offset": 14, "length": 2 }
+      ]
+    }
+  ]
+}
+
+// ----------------------------------------------------------------------------
+// COLOR is config-driven. A field's color is decided in this order:
+//   1. the field's own "color" (any CSS color), else
+//   2. the descriptor "palette"[kind], else
+//   3. a deterministic auto color generated from the kind string.
+// "kind" is just a label you choose (e.g. header, payload, crc, counter, ...);
+// no colors are hardcoded in the extension.
+//
+// Full guide: vscode-hexeditor/docs/nvm-layout-providers.md
+// ----------------------------------------------------------------------------

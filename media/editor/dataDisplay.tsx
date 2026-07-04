@@ -6,37 +6,37 @@ import { useRecoilValue, useSetRecoilState } from "recoil";
 import { HexDecorator } from "../../shared/decorators";
 import { EditRangeOp, HexDocumentEditOp } from "../../shared/hexDocumentModel";
 import {
-    CopyFormat,
-    DeleteAcceptedMessage,
-    InspectorLocation,
-    MessageType,
+	CopyFormat,
+	DeleteAcceptedMessage,
+	InspectorLocation,
+	MessageType,
 } from "../../shared/protocol";
 import { binarySearch } from "../../shared/util/binarySearch";
 import { Range } from "../../shared/util/range";
 import { PastePopup } from "./copyPaste";
 import _style from "./dataDisplay.css";
 import {
-    dataCellCls,
-    FocusedElement,
-    useDisplayContext,
-    useIsFocused,
-    useIsHovered,
-    useIsSelected,
-    useIsUnsaved,
+	dataCellCls,
+	FocusedElement,
+	useDisplayContext,
+	useIsFocused,
+	useIsHovered,
+	useIsSelected,
+	useIsUnsaved,
 } from "./dataDisplayContext";
 import { DataInspectorAside } from "./dataInspector";
 import { useGlobalHandler, useLastAsyncRecoilValue } from "./hooks";
 import * as select from "./state";
 import { strings } from "./strings";
 import {
-    clamp,
-    clsx,
-    colorForNvmField,
-    getAsciiCharacter,
-    getScrollDimensions,
-    HexDecoratorStyles,
-    parseHexDigit,
-    throwOnUndefinedAccessInDev,
+	clamp,
+	clsx,
+	colorForNvmField,
+	getAsciiCharacter,
+	getScrollDimensions,
+	HexDecoratorStyles,
+	parseHexDigit,
+	throwOnUndefinedAccessInDev,
 } from "./util";
 import { VsTooltipPopover } from "./vscodeUi";
 
@@ -483,6 +483,17 @@ const DataCell: React.FC<{
 	const setSelectedNvmBlock = useSetRecoilState(select.selectedNvmBlockAtom);
 	const setSelectedNvmUnit = useSetRecoilState(select.selectedNvmUnitAtom);
 	const setOffset = useSetRecoilState(select.offset);
+	const columnWidth = useRecoilValue(select.columnWidth);
+
+	// Navigate to an in-file link target: reveal the row and focus the byte.
+	const jumpTo = useCallback(
+		(target: number) => {
+			setOffset(select.startOfRowContainingByte(target, columnWidth));
+			ctx.focusedElement = new FocusedElement(false, target);
+			ctx.setSelectionRanges([Range.single(target)]);
+		},
+		[columnWidth],
+	);
 
 	const [anchor, setAnchor] = useState<Element | null>(null);
 	const onMouseEnter = useCallback(() => {
@@ -555,18 +566,27 @@ const DataCell: React.FC<{
 		[focusedElement.key, offset],
 	);
 
-	const onClick = useCallback(() => {
-		// Clicking selects the whole unit under the cursor (a data block, the
-		// sector header, or a single sector-table slot); clicking elsewhere
-		// clears the highlight so the view returns to the plain hex editor.
-		if (nvmField) {
-			setSelectedNvmUnit(nvmField.unit);
-			setSelectedNvmBlock(nvmField.block);
-		} else {
-			setSelectedNvmUnit(undefined);
-			setSelectedNvmBlock(undefined);
-		}
-	}, [nvmField]);
+	const onClick = useCallback(
+		(e: React.MouseEvent) => {
+			// Ctrl/Cmd-click on a linked field jumps to its in-file target
+			// (plain click is reserved for unit selection / cursor placement).
+			if ((e.ctrlKey || e.metaKey) && nvmField?.link) {
+				jumpTo(nvmField.link.targetOffset);
+				return;
+			}
+			// Clicking selects the whole unit under the cursor (a data block, the
+			// sector header, or a single sector-table slot); clicking elsewhere
+			// clears the highlight so the view returns to the plain hex editor.
+			if (nvmField) {
+				setSelectedNvmUnit(nvmField.unit);
+				setSelectedNvmBlock(nvmField.block);
+			} else {
+				setSelectedNvmUnit(undefined);
+				setSelectedNvmBlock(undefined);
+			}
+		},
+		[nvmField, jumpTo],
+	);
 
 	const isFocused = useIsFocused(focusedElement);
 	useEffect(() => {
@@ -706,7 +726,6 @@ const DataCell: React.FC<{
 			onFocus={onFocus}
 			onBlur={onBlur}
 			onClick={onClick}
-			title={undefined}
 			className={clsx(
 				isChar && style.dataCellChar,
 				dataCellCls,
@@ -725,7 +744,20 @@ const DataCell: React.FC<{
 			data-key={focusedElement.key}
 			style={
 				isSelectedUnit && nvmField
-					? { background: colorForNvmField(nvmField.kind), color: "#1f1f1f", fontWeight: 600 }
+					? {
+							background: colorForNvmField(nvmField.kind, nvmField.color),
+							color: "#1f1f1f",
+							fontWeight: 600,
+							// Linked fields advertise the Ctrl/Cmd-click jump affordance.
+							...(nvmField.link
+								? { cursor: "pointer", textDecoration: "underline" }
+								: undefined),
+						}
+					: undefined
+			}
+			title={
+				isSelectedUnit && nvmField?.link
+					? `Ctrl/Cmd-click to jump${nvmField.link.label ? ` to ${nvmField.link.label}` : ""}`
 					: undefined
 			}
 		>
@@ -767,6 +799,22 @@ const DataCell: React.FC<{
 						>
 							Reveal
 						</button>
+						{nvmField?.link && (
+							<button
+								className={style.vsButton}
+								title={
+									nvmField.link.label
+										? `Jump to ${nvmField.link.label}`
+										: "Jump to linked address"
+								}
+								onClick={() => {
+									jumpTo(nvmField.link!.targetOffset);
+									setAnchor(null);
+								}}
+							>
+								Jump →
+							</button>
+						)}
 					</div>
 				</div>
 			</VsTooltipPopover>

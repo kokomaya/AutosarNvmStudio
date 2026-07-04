@@ -99,11 +99,23 @@ export interface NvmFieldInfo {
 	offset: number;
 	length: number;
 	/**
+	 * Resolved background color (any CSS color) for this field. Config-driven:
+	 * comes from the field's own `color` or the descriptor `palette[kind]`. When
+	 * absent the webview falls back to a deterministic auto color.
+	 */
+	color?: string;
+	/**
 	 * Identifier of the "unit" this field belongs to (a data block, the sector
 	 * header, or a single sector-table slot). Clicking any byte highlights all
 	 * fields sharing this unit; when omitted the owning block id is used.
 	 */
 	unit?: string;
+	/**
+	 * When set, this field holds an address that points *inside the current
+	 * file*: the adapter has decoded and range-checked it into a concrete editor
+	 * byte offset. The display offers a jump affordance and navigates there.
+	 */
+	link?: { targetOffset: number; label?: string };
 }
 
 export interface NvmBlockInfo {

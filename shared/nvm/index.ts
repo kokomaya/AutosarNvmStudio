@@ -5,6 +5,7 @@ export * from "./arxml";
 export * from "./crc";
 export * from "./engine";
 export * from "./expr";
+export * from "./link";
 export * from "./loaders";
 export * from "./memoryImage";
 export * from "./model";
