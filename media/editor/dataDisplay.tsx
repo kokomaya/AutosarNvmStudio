@@ -725,7 +725,7 @@ const DataCell: React.FC<{
 			data-key={focusedElement.key}
 			style={
 				isSelectedUnit && nvmField
-					? { background: colorForNvmField(nvmField.kind) }
+					? { background: colorForNvmField(nvmField.kind), color: "#1f1f1f", fontWeight: 600 }
 					: undefined
 			}
 		>

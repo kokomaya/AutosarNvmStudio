@@ -18,7 +18,6 @@ import {
     InspectorLocation,
     MessageHandler,
     MessageType,
-    NvmBlockInfo,
     PasteMode,
     ToWebviewMessage,
 } from "../shared/protocol";
@@ -31,7 +30,7 @@ import { HexDocument } from "./hexDocument";
 import { HexEditorRegistry } from "./hexEditorRegistry";
 import { parseArxmlFile } from "./nvm/arxmlParser";
 import { mapBlocksToBuffer } from "./nvm/blockMapper";
-import { buildFeeV3Blocks } from "./nvm/feeV3Blocks";
+import { LayoutConfig, ResolvedLayout, resolveNvmBlocks } from "./nvm/layout";
 import { ISearchRequest, LiteralSearchRequest, RegexSearchRequest } from "./searchRequest";
 import { flattenBuffers, getBaseName, getCorrectArrayBuffer, randomString } from "./util";
 
@@ -165,8 +164,8 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 
 		// Auto-detect NVM structure for the opened binary.
 		// Behavior:
-		//  - First try the Vector FEE V3 container parser for S-record / HEX dumps
-		//    (e.g. `NVM_test.mot`); this colors each block and its attributes.
+		//  - First run the registered vendor layout providers (Vector FEE V3,
+		//    config-driven `*.nvmlayout.json`, …); this colors each block/attribute.
 		//  - Otherwise fall back to ARXML detection (`hexeditor.autoLoadArxml`).
 		(async () => {
 			try {
@@ -175,17 +174,19 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 				// compute directory using string-safe operations to avoid importing node 'path'
 				const dir = fsPath.replace(/[\\/][^\\/]+$/, "");
 
-				// 1) Vector FEE V3 (Motorola S-record / Intel HEX NVM dumps).
+				// 1) Vendor layout providers (Motorola S-record / Intel HEX dumps).
 				try {
-					const feeBlocks = await this.tryLoadFeeV3Blocks(document, fsPath, dir);
-					if (feeBlocks && feeBlocks.length > 0) {
-						this._registry.setNvmBlocks(document, feeBlocks);
-						messageHandler.sendEvent({ type: MessageType.SetNvmBlocks, blocks: feeBlocks });
-						console.debug(`Auto-loaded FEE V3 ${fsPath} -> ${feeBlocks.length} blocks`);
+					const resolved = await this.tryLoadNvmBlocks(document, fsPath, dir);
+					if (resolved && resolved.blocks.length > 0) {
+						this._registry.setNvmBlocks(document, resolved.blocks);
+						messageHandler.sendEvent({ type: MessageType.SetNvmBlocks, blocks: resolved.blocks });
+						console.debug(
+							`Auto-loaded NVM layout [${resolved.providerId}] ${fsPath} -> ${resolved.blocks.length} blocks`,
+						);
 						return;
 					}
 				} catch (e) {
-					console.warn("FEE V3 auto-detection failed:", e);
+					console.warn("NVM layout auto-detection failed:", e);
 				}
 
 				// 2) Fall back to ARXML detection in the same directory as the binary.
@@ -241,15 +242,16 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 	}
 
 	/**
-	 * Attempt to parse the document as a Vector FEE V3 NVM dump. Returns the
-	 * colored block descriptors, or `undefined`/empty when it is not a FEE V3
-	 * container.
+	 * Run the registered vendor layout providers against the opened document.
+	 * Gathers the file text plus any nearby `Fee_Lcfg.c` and `*.nvmlayout.json`
+	 * descriptors and returns the first provider's blocks.
 	 */
-	private async tryLoadFeeV3Blocks(
+	private async tryLoadNvmBlocks(
 		document: HexDocument,
 		fsPath: string,
 		dir: string,
-	): Promise<NvmBlockInfo[] | undefined> {
+	): Promise<ResolvedLayout | undefined> {
+		const fileName = fsPath.replace(/^.*[\\/]/, "").toLowerCase();
 		const ext = fsPath.slice(fsPath.lastIndexOf(".")).toLowerCase();
 		const hexExts = new Set([
 			".mot",
@@ -270,8 +272,47 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 
 		const raw = await vscode.workspace.fs.readFile(document.uri);
 		const text = new TextDecoder("ascii").decode(raw);
-		const feeLcfg = await this.findFeeLcfgSource(dir);
-		return buildFeeV3Blocks(text, feeLcfg);
+		const [feeLcfgSource, configs] = await Promise.all([
+			this.findFeeLcfgSource(dir),
+			this.findLayoutConfigs(dir),
+		]);
+		return resolveNvmBlocks({ fileName, ext, text, feeLcfgSource, configs });
+	}
+
+	/**
+	 * Discover vendor layout descriptors (`*.nvmlayout.json`) near the opened
+	 * binary so vendor-specific formats can be added purely by configuration.
+	 * Searches the file's directory, a sibling `conf/`, and the parent's `conf/`.
+	 */
+	private async findLayoutConfigs(dir: string): Promise<LayoutConfig[]> {
+		const parent = dir.replace(/[\\/][^\\/]+$/, "");
+		const searchDirs = [dir, `${dir}/conf`, `${parent}/conf`];
+		const configs: LayoutConfig[] = [];
+		for (const d of searchDirs) {
+			try {
+				const entries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(d));
+				for (const [name] of entries) {
+					if (!name.toLowerCase().endsWith(".nvmlayout.json")) {
+						continue;
+					}
+					try {
+						const uri = vscode.Uri.joinPath(vscode.Uri.file(d), name);
+						const buf = await vscode.workspace.fs.readFile(uri);
+						const parsed = JSON.parse(new TextDecoder("utf8").decode(buf));
+						for (const c of Array.isArray(parsed) ? parsed : [parsed]) {
+							if (c && Array.isArray(c.blocks)) {
+								configs.push(c as LayoutConfig);
+							}
+						}
+					} catch (e) {
+						console.warn(`Ignoring invalid NVM layout descriptor ${name}:`, e);
+					}
+				}
+			} catch {
+				// directory does not exist; keep searching
+			}
+		}
+		return configs;
 	}
 
 	/**
