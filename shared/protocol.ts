@@ -90,15 +90,35 @@ export interface ReadyResponseMessage {
  * Sent from the extension to the webview to provide parsed NVM blocks and
  * associated metadata for rendering and inspection.
  */
+/** A colored sub-range (attribute) within an NVM block. */
+export interface NvmFieldInfo {
+	name: string;
+	/** Semantic kind used to pick a color (header, marker, payload, crc, padding, ...). */
+	kind: string;
+	/** Byte offset of the field in the editor's byte space. */
+	offset: number;
+	length: number;
+	/**
+	 * Identifier of the "unit" this field belongs to (a data block, the sector
+	 * header, or a single sector-table slot). Clicking any byte highlights all
+	 * fields sharing this unit; when omitted the owning block id is used.
+	 */
+	unit?: string;
+}
+
+export interface NvmBlockInfo {
+	id: string;
+	name?: string;
+	offset: number;
+	length: number;
+	raw?: any;
+	/** Sub-ranges (attributes) that should be colored individually. */
+	fields?: NvmFieldInfo[];
+}
+
 export interface SetNvmBlocksMessage {
 	type: MessageType.SetNvmBlocks;
-	blocks: {
-		id: string;
-		name?: string;
-		offset: number;
-		length: number;
-		raw?: any;
-	}[];
+	blocks: NvmBlockInfo[];
 }
 
 export interface SetEditModeMessage {

@@ -4,22 +4,23 @@
 import { TelemetryReporter } from "@vscode/extension-telemetry";
 import * as vscode from "vscode";
 import {
-	HexDocumentEdit,
-	HexDocumentEditOp,
-	HexDocumentEditReference,
+    HexDocumentEdit,
+    HexDocumentEditOp,
+    HexDocumentEditReference,
 } from "../shared/hexDocumentModel";
 import {
-	CopyFormat,
-	Endianness,
-	ExtensionHostMessageHandler,
-	FromWebviewMessage,
-	ICodeSettings,
-	IEditorSettings,
-	InspectorLocation,
-	MessageHandler,
-	MessageType,
-	PasteMode,
-	ToWebviewMessage,
+    CopyFormat,
+    Endianness,
+    ExtensionHostMessageHandler,
+    FromWebviewMessage,
+    ICodeSettings,
+    IEditorSettings,
+    InspectorLocation,
+    MessageHandler,
+    MessageType,
+    NvmBlockInfo,
+    PasteMode,
+    ToWebviewMessage,
 } from "../shared/protocol";
 import { deserializeEdits, serializeEdits } from "../shared/serialization";
 import { ILocalizedStrings, placeholder1 } from "../shared/strings";
@@ -30,6 +31,7 @@ import { HexDocument } from "./hexDocument";
 import { HexEditorRegistry } from "./hexEditorRegistry";
 import { parseArxmlFile } from "./nvm/arxmlParser";
 import { mapBlocksToBuffer } from "./nvm/blockMapper";
+import { buildFeeV3Blocks } from "./nvm/feeV3Blocks";
 import { ISearchRequest, LiteralSearchRequest, RegexSearchRequest } from "./searchRequest";
 import { flattenBuffers, getBaseName, getCorrectArrayBuffer, randomString } from "./util";
 
@@ -161,20 +163,35 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 		const handle = this._registry.add(document, messageHandler);
 		webviewPanel.onDidDispose(() => handle.dispose());
 
-		// Auto-detect ARXML files in the same directory as the opened binary.
+		// Auto-detect NVM structure for the opened binary.
 		// Behavior:
-		//  - Controlled by the setting `hexeditor.autoLoadArxml` (default: true)
-		//  - Prefer files matching the binary basename (e.g. foo.bin -> foo.arxml)
-		//  - If multiple candidates exist, prompt the user to choose via quick pick
+		//  - First try the Vector FEE V3 container parser for S-record / HEX dumps
+		//    (e.g. `NVM_test.mot`); this colors each block and its attributes.
+		//  - Otherwise fall back to ARXML detection (`hexeditor.autoLoadArxml`).
 		(async () => {
 			try {
-				const enabled = vscode.workspace.getConfiguration("hexeditor").get("autoLoadArxml", true);
-				if (!enabled) return;
-
 				const fsPath = document.uri.fsPath;
 				if (!fsPath) return;
 				// compute directory using string-safe operations to avoid importing node 'path'
 				const dir = fsPath.replace(/[\\/][^\\/]+$/, "");
+
+				// 1) Vector FEE V3 (Motorola S-record / Intel HEX NVM dumps).
+				try {
+					const feeBlocks = await this.tryLoadFeeV3Blocks(document, fsPath, dir);
+					if (feeBlocks && feeBlocks.length > 0) {
+						this._registry.setNvmBlocks(document, feeBlocks);
+						messageHandler.sendEvent({ type: MessageType.SetNvmBlocks, blocks: feeBlocks });
+						console.debug(`Auto-loaded FEE V3 ${fsPath} -> ${feeBlocks.length} blocks`);
+						return;
+					}
+				} catch (e) {
+					console.warn("FEE V3 auto-detection failed:", e);
+				}
+
+				// 2) Fall back to ARXML detection in the same directory as the binary.
+				const enabled = vscode.workspace.getConfiguration("hexeditor").get("autoLoadArxml", true);
+				if (!enabled) return;
+
 				const entries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(dir));
 				const candidates = entries
 					.filter(e => {
@@ -221,6 +238,65 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 		};
 		webviewPanel.webview.html = this.getHtmlForWebview(webviewPanel.webview);
 		webviewPanel.webview.onDidReceiveMessage(e => messageHandler.handleMessage(e));
+	}
+
+	/**
+	 * Attempt to parse the document as a Vector FEE V3 NVM dump. Returns the
+	 * colored block descriptors, or `undefined`/empty when it is not a FEE V3
+	 * container.
+	 */
+	private async tryLoadFeeV3Blocks(
+		document: HexDocument,
+		fsPath: string,
+		dir: string,
+	): Promise<NvmBlockInfo[] | undefined> {
+		const ext = fsPath.slice(fsPath.lastIndexOf(".")).toLowerCase();
+		const hexExts = new Set([
+			".mot",
+			".srec",
+			".s19",
+			".s28",
+			".s37",
+			".s1",
+			".s2",
+			".s3",
+			".hex",
+			".ihex",
+			".ihx",
+		]);
+		if (!hexExts.has(ext)) {
+			return undefined;
+		}
+
+		const raw = await vscode.workspace.fs.readFile(document.uri);
+		const text = new TextDecoder("ascii").decode(raw);
+		const feeLcfg = await this.findFeeLcfgSource(dir);
+		return buildFeeV3Blocks(text, feeLcfg);
+	}
+
+	/**
+	 * Locate and read a generated `Fee_Lcfg.c` near the opened binary so FEE V3
+	 * chunks can be resolved to their business block names and net lengths.
+	 * Searches the binary's directory, a sibling `conf/`, and the parent's `conf/`.
+	 */
+	private async findFeeLcfgSource(dir: string): Promise<string | undefined> {
+		const parent = dir.replace(/[\\/][^\\/]+$/, "");
+		const searchDirs = [dir, `${dir}/conf`, `${parent}/conf`];
+		for (const d of searchDirs) {
+			try {
+				const entries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(d));
+				const match = entries.find(e => e[0].toLowerCase() === "fee_lcfg.c");
+				if (!match) {
+					continue;
+				}
+				const uri = vscode.Uri.joinPath(vscode.Uri.file(d), match[0]);
+				const buf = await vscode.workspace.fs.readFile(uri);
+				return new TextDecoder("utf8").decode(buf);
+			} catch {
+				// directory does not exist; keep searching
+			}
+		}
+		return undefined;
 	}
 
 	private readonly _onDidChangeCustomDocument = new vscode.EventEmitter<

@@ -31,7 +31,7 @@ import { strings } from "./strings";
 import {
     clamp,
     clsx,
-    colorForString,
+    colorForNvmField,
     getAsciiCharacter,
     getScrollDimensions,
     HexDecoratorStyles,
@@ -436,6 +436,8 @@ const LoadingDataRows: React.FC<IDataPageProps> = props => (
 
 const DataPageContents: React.FC<IDataPageProps> = props => {
 	const decorators = useRecoilValue(select.decoratorsPage(props.pageNo));
+	const nvmFields = useRecoilValue(select.nvmFieldRangesPage(props.pageNo));
+	const selectedUnit = useRecoilValue(select.selectedNvmUnitAtom);
 	const dataPageSelector = select.editedDataPages(props.pageNo);
 	const [data] = useLastAsyncRecoilValue(dataPageSelector);
 
@@ -452,6 +454,8 @@ const DataPageContents: React.FC<IDataPageProps> = props => {
 					showDecodedText={props.showDecodedText}
 					isRowWithInsertDataCell={isRowWithInsertDataCell}
 					decorators={decorators}
+					nvmFields={nvmFields}
+					selectedUnit={selectedUnit}
 				/>
 			))}
 		</>
@@ -464,16 +468,20 @@ const DataCell: React.FC<{
 	isChar: boolean;
 	isAppend: boolean;
 	className?: string;
-	// optional nvm block metadata attached to this cell's decorator range
-	nvmBlock?: { id: string; name?: string; offset: number; length: number; raw?: any };
-}> = ({ offset, value, className, children, isChar, isAppend, nvmBlock }) => {
+	// optional nvm field (colored attribute) this cell belongs to
+	nvmField?: select.NvmFieldRange;
+	// whether this cell's unit is the currently selected (rendered) one
+	isSelectedUnit?: boolean;
+}> = ({ offset, value, className, children, isChar, isAppend, nvmField, isSelectedUnit }) => {
 	const elRef = useRef<HTMLSpanElement | null>(null);
 	const focusedElement = new FocusedElement(isChar, offset);
 	const ctx = useDisplayContext();
 	const setReadonlyWarning = useSetRecoilState(select.showReadonlyWarningForEl);
 	const editMode = useRecoilValue(select.editMode);
 
+	const nvmBlock = nvmField?.block;
 	const setSelectedNvmBlock = useSetRecoilState(select.selectedNvmBlockAtom);
+	const setSelectedNvmUnit = useSetRecoilState(select.selectedNvmUnitAtom);
 	const setOffset = useSetRecoilState(select.offset);
 
 	const [anchor, setAnchor] = useState<Element | null>(null);
@@ -482,10 +490,12 @@ const DataCell: React.FC<{
 		if (!isAppend && ctx.isSelecting !== undefined) {
 			ctx.replaceLastSelectionRange(Range.inclusive(ctx.isSelecting, offset));
 		}
-		if (nvmBlock && elRef.current) {
+		// Only show the NVM popover for the currently selected unit, so unselected
+		// bytes behave like the plain hex editor.
+		if (isSelectedUnit && elRef.current) {
 			setAnchor(elRef.current);
 		}
-	}, [offset, focusedElement, nvmBlock]);
+	}, [offset, focusedElement, isSelectedUnit]);
 
 	const onMouseLeave = useCallback(
 		(e: React.MouseEvent) => {
@@ -546,12 +556,17 @@ const DataCell: React.FC<{
 	);
 
 	const onClick = useCallback(() => {
-		if (nvmBlock) {
-			setSelectedNvmBlock(nvmBlock);
+		// Clicking selects the whole unit under the cursor (a data block, the
+		// sector header, or a single sector-table slot); clicking elsewhere
+		// clears the highlight so the view returns to the plain hex editor.
+		if (nvmField) {
+			setSelectedNvmUnit(nvmField.unit);
+			setSelectedNvmBlock(nvmField.block);
 		} else {
+			setSelectedNvmUnit(undefined);
 			setSelectedNvmBlock(undefined);
 		}
-	}, [nvmBlock]);
+	}, [nvmField]);
 
 	const isFocused = useIsFocused(focusedElement);
 	useEffect(() => {
@@ -708,11 +723,15 @@ const DataCell: React.FC<{
 			onMouseLeave={onMouseLeave}
 			onKeyDown={onKeyDown}
 			data-key={focusedElement.key}
-			style={nvmBlock ? { background: colorForString(nvmBlock.id) } : undefined}
+			style={
+				isSelectedUnit && nvmField
+					? { background: colorForNvmField(nvmField.kind) }
+					: undefined
+			}
 		>
 			{firstOctetOfEdit !== undefined ? firstOctetOfEdit.toString(16).toUpperCase() : children}
 	</span>
-		{nvmBlock && (
+		{isSelectedUnit && nvmBlock && (
 			<VsTooltipPopover
 				anchor={anchor}
 				hide={() => setAnchor(null)}
@@ -720,8 +739,12 @@ const DataCell: React.FC<{
 				className={style.nvmTooltip}
 			>
 				<div className={style.nvmTooltipContent}>
-					<div className={style.nvmTooltipTitle}>{nvmBlock.id}</div>
-					{nvmBlock.name && <div className={style.nvmTooltipSubtitle}>{nvmBlock.name}</div>}
+					<div className={style.nvmTooltipTitle}>{nvmBlock.name ?? nvmBlock.id}</div>
+					{nvmField && (
+						<div className={style.nvmTooltipSubtitle}>
+							{nvmField.fieldName} ({nvmField.kind})
+						</div>
+					)}
 					<div className={style.nvmTooltipDetails}>
 						Offset: 0x{nvmBlock.offset.toString(16).toUpperCase()} • {nvmBlock.length} bytes
 					</div>
@@ -759,14 +782,23 @@ const DataRowContents: React.FC<{
 	rawBytes: Uint8Array;
 	isRowWithInsertDataCell: boolean;
 	decorators: HexDecorator[];
-}> = ({ offset, width, showDecodedText, rawBytes, isRowWithInsertDataCell, decorators }) => {
+	nvmFields: select.NvmFieldRange[];
+	selectedUnit?: string;
+}> = ({
+	offset,
+	width,
+	showDecodedText,
+	rawBytes,
+	isRowWithInsertDataCell,
+	decorators,
+	nvmFields,
+	selectedUnit,
+}) => {
 	let memoValue = "";
 	const ctx = useDisplayContext();
 	for (const byte of rawBytes) {
 		memoValue += "," + byte;
 	}
-
-	const nvmBlocks = useRecoilValue(select.nvmBlocksAtom);
 
 	const { bytes, chars } = useMemo(() => {
 		const bytes: React.ReactChild[] = [];
@@ -807,13 +839,9 @@ const DataRowContents: React.FC<{
 				continue;
 			}
 
-			// find matching nvm block metadata for this decorator range, if any
-			let nvmBlock = undefined;
-			if (decorator) {
-				nvmBlock = nvmBlocks.find(
-					b => b.offset === decorator!.range.start && b.offset + b.length === decorator!.range.end,
-				);
-			}
+			// find the NVM field (colored attribute) covering this byte, if any
+			const nvmField = nvmFields.find(f => boffset >= f.start && boffset < f.end);
+			const isSelectedUnit = nvmField !== undefined && nvmField.unit === selectedUnit;
 
 			bytes.push(
 				<DataCell
@@ -823,7 +851,8 @@ const DataRowContents: React.FC<{
 					isChar={false}
 					isAppend={false}
 					value={value}
-					nvmBlock={nvmBlock}
+					nvmField={nvmField}
+					isSelectedUnit={isSelectedUnit}
 				>
 					{value.toString(16).padStart(2, "0").toUpperCase()}
 				</DataCell>,
@@ -842,7 +871,8 @@ const DataRowContents: React.FC<{
 							decorator !== undefined && HexDecoratorStyles[decorator.type],
 						)}
 						value={value}
-						nvmBlock={nvmBlock}
+						nvmField={nvmField}
+						isSelectedUnit={isSelectedUnit}
 					>
 						{char === undefined ? "." : char}
 					</DataCell>,
@@ -851,7 +881,7 @@ const DataRowContents: React.FC<{
 		}
 
 		return { bytes, chars };
-	}, [memoValue, showDecodedText, isRowWithInsertDataCell]);
+	}, [memoValue, showDecodedText, isRowWithInsertDataCell, nvmFields, selectedUnit, decorators]);
 
 	return (
 		<>

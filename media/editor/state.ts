@@ -5,21 +5,22 @@
 import { atom, DefaultValue, selector, selectorFamily } from "recoil";
 import { HexDecorator, HexDecoratorType } from "../../shared/decorators";
 import {
-	buildEditTimeline,
-	HexDocumentEdit,
-	HexDocumentEditOp,
-	HexDocumentEmptyInsertEdit,
-	readUsingRanges,
+    buildEditTimeline,
+    HexDocumentEdit,
+    HexDocumentEditOp,
+    HexDocumentEmptyInsertEdit,
+    readUsingRanges,
 } from "../../shared/hexDocumentModel";
 import {
-	FromWebviewMessage,
-	InspectorLocation,
-	MessageHandler,
-	MessageType,
-	ReadRangeResponseMessage,
-	ReadyResponseMessage,
-	SearchResultsWithProgress,
-	ToWebviewMessage,
+    FromWebviewMessage,
+    InspectorLocation,
+    MessageHandler,
+    MessageType,
+    NvmBlockInfo,
+    ReadRangeResponseMessage,
+    ReadyResponseMessage,
+    SearchResultsWithProgress,
+    ToWebviewMessage,
 } from "../../shared/protocol";
 import { deserializeEdits, serializeEdits } from "../../shared/serialization";
 import { binarySearch } from "../../shared/util/binarySearch";
@@ -124,36 +125,93 @@ export const decorators = selector({
 	get: ({ get }) => {
 		const ready = get(readyQuery);
 		const base: HexDecorator[] = ready.decorators ?? [];
-		const nvmBlocks: { id: string; name?: string; offset: number; length: number; raw?: any }[] = get(
-			nvmBlocksAtom,
-		);
-		const nvmDecorators: HexDecorator[] = nvmBlocks.map(b => ({
-			type: HexDecoratorType.Insert,
-			range: { start: b.offset, end: b.offset + b.length },
-		}));
-		const merged = base.concat(nvmDecorators);
+		const merged = base.slice();
 		merged.sort((a, b) => a.range.start - b.range.start);
 		return merged;
 	},
 });
 
-export const nvmBlocksAtom = atom<
-	{ id: string; name?: string; offset: number; length: number; raw?: any }[]
->({
+/**
+ * Eagerly (at module load) capture NVM blocks pushed from the extension so the
+ * message is never lost to a startup race, then fan out to any subscribed atom.
+ */
+let latestNvmBlocks: NvmBlockInfo[] = [];
+const nvmBlockListeners = new Set<(blocks: NvmBlockInfo[]) => void>();
+registerHandler(MessageType.SetNvmBlocks, (msg: any) => {
+	latestNvmBlocks = msg.blocks ?? [];
+	for (const listener of nvmBlockListeners) {
+		listener(latestNvmBlocks);
+	}
+});
+
+export const nvmBlocksAtom = atom<NvmBlockInfo[]>({
 	key: "nvmBlocksAtom",
 	default: [],
 	effects_UNSTABLE: [fx => {
-		registerHandler(MessageType.SetNvmBlocks, (msg: any) => {
-			// msg.blocks is expected to be an array of blocks
-			fx.setSelf(msg.blocks ?? []);
-		});
+		// Seed with any blocks that arrived before this atom was first subscribed
+		// (the SetNvmBlocks event is pushed by the extension right at startup and
+		// can race the atom's lazy subscription), then keep in sync.
+		fx.setSelf(latestNvmBlocks);
+		const listener = (blocks: NvmBlockInfo[]) => fx.setSelf(blocks);
+		nvmBlockListeners.add(listener);
+		return () => {
+			nvmBlockListeners.delete(listener);
+		};
 	}],
 });
 
-export const selectedNvmBlockAtom = atom<
-	{ id: string; name?: string; offset: number; length: number; raw?: any } | undefined
->({
+/** A single colored NVM attribute range, flattened across all blocks. */
+export interface NvmFieldRange {
+	start: number;
+	end: number;
+	kind: string;
+	fieldName: string;
+	/** Highlight unit this field belongs to (block / sector header / table slot). */
+	unit: string;
+	block: NvmBlockInfo;
+}
+
+/** All NVM field ranges across every block, sorted by start offset. */
+export const nvmFieldRanges = selector<NvmFieldRange[]>({
+	key: "nvmFieldRanges",
+	get: ({ get }) => {
+		const blocks = get(nvmBlocksAtom);
+		const ranges: NvmFieldRange[] = [];
+		for (const block of blocks) {
+			const fields = block.fields?.length
+				? block.fields
+				: [{ name: block.name ?? block.id, kind: "payload", offset: block.offset, length: block.length }];
+			for (const f of fields) {
+				if (f.length <= 0) {
+					continue;
+				}
+				ranges.push({
+					start: f.offset,
+					end: f.offset + f.length,
+					kind: f.kind,
+					fieldName: f.name,
+					unit: (f as { unit?: string }).unit ?? block.id,
+					block,
+				});
+			}
+		}
+		ranges.sort((a, b) => a.start - b.start || a.end - b.end);
+		return ranges;
+	},
+});
+
+export const selectedNvmBlockAtom = atom<NvmBlockInfo | undefined>({
 	key: "selectedNvmBlockAtom",
+	default: undefined,
+});
+
+/**
+ * The currently selected highlight unit (block id / sector header / table slot).
+ * Only fields belonging to this unit are colored; everything else renders like
+ * the plain hex editor.
+ */
+export const selectedNvmUnitAtom = atom<string | undefined>({
+	key: "selectedNvmUnitAtom",
 	default: undefined,
 });
 
@@ -518,6 +576,23 @@ export const decoratorsPage = selectorFamily({
 			const searcherByStart = binarySearch<HexDecorator>(d => d.range.start);
 			const endIndex = searcherByStart(pageSize * pageNumber + pageSize + 1, allDecorators);
 			return allDecorators.slice(startIndex, endIndex);
+		},
+});
+
+/** Returns the NVM field ranges overlapping a page. */
+export const nvmFieldRangesPage = selectorFamily({
+	key: "nvmFieldRangesPage",
+	get:
+		(pageNumber: number) =>
+		({ get }) => {
+			const all = get(nvmFieldRanges);
+			if (all.length === 0) {
+				return [];
+			}
+			const pageSize = get(dataPageSize);
+			const pageStart = pageSize * pageNumber;
+			const pageEnd = pageStart + pageSize;
+			return all.filter(r => r.start < pageEnd && r.end > pageStart);
 		},
 });
 

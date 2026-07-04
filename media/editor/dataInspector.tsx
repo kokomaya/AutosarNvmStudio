@@ -111,6 +111,48 @@ export const DataInspectorAside: React.FC<{ onInspecting?(isInspecting: boolean)
 
 const lookahead = 16;
 
+/**
+ * Explains the byte at `offset` in terms of the parsed NVM layout: which block
+ * and attribute (field) it belongs to, plus its raw value down to the bit.
+ */
+const NvmByteExplain: React.FC<{ offset: number }> = ({ offset }) => {
+	const ranges = useRecoilValue(select.nvmFieldRanges);
+	const field = useMemo(
+		() => ranges.find(r => offset >= r.start && offset < r.end),
+		[ranges, offset],
+	);
+	const bytes = useFileBytes(offset, 1);
+	if (!field) {
+		return null;
+	}
+	const value = bytes.length ? bytes[0] : undefined;
+	return (
+		<div className={style.nvmInspector}>
+			<h3>{field.block.name ?? field.block.id}</h3>
+			<dl>
+				<dt>Attribute</dt>
+				<dd>{field.fieldName}</dd>
+				<dt>Kind</dt>
+				<dd>{field.kind}</dd>
+				<dt>Byte</dt>
+				<dd>
+					0x{offset.toString(16).toUpperCase()} (field 0x{field.start.toString(16).toUpperCase()}–0x
+					{field.end.toString(16).toUpperCase()}, {field.end - field.start} B)
+				</dd>
+				{value !== undefined && (
+					<>
+						<dt>Value</dt>
+						<dd>
+							0x{value.toString(16).padStart(2, "0").toUpperCase()} · {value} ·{" "}
+							{value.toString(2).padStart(8, "0")}b
+						</dd>
+					</>
+				)}
+			</dl>
+		</div>
+	);
+};
+
 /** Inner contents of the data inspector, reused between the hover and aside inspector views. */
 const InspectorContents: React.FC<{
 	offset: number;
@@ -124,6 +166,7 @@ const InspectorContents: React.FC<{
 
 	return (
 		<>
+			<NvmByteExplain offset={offset} />
 			<dl className={style.types} style={{ gridTemplateColumns: "max-content ".repeat(columns) }}>
 				{inspectableTypes.map(({ label, convert, minBytes }) => (
 					<React.Fragment key={label}>

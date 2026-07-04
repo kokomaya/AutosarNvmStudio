@@ -18,12 +18,15 @@ import {
     computeCrc,
     crcPresets,
     decodeStruct,
+    feeLcfgByTag,
     importNvmCatalog,
     loadHexImage,
     MemoryImage,
     NvmModel,
     parseBlkStruct,
+    parseFeeLcfg,
     parseNvm,
+    parseVectorFeeV3,
     resolveCrcPreset,
     structByteLength,
     validateProfile,
@@ -257,6 +260,72 @@ function cmdImport(args: ParsedArgs): number {
 	return 0;
 }
 
+function cmdFeeV3(args: ParsedArgs): number {
+	const path = args.positionals[0];
+	if (!path) {
+		console.error(
+			"usage: nvmcli feev3 <file.mot|hex> [--lcfg <Fee_Lcfg.c>] [--align <n>] [--sectors <n>] [--sectorsize <n>] [--json]",
+		);
+		return 2;
+	}
+	const image = loadImageFile(path);
+	const result = parseVectorFeeV3(image, {
+		alignment: typeof args.options.align === "string" ? parseIntFlexible(args.options.align) : undefined,
+		numberOfSectors: typeof args.options.sectors === "string" ? parseIntFlexible(args.options.sectors) : undefined,
+		sectorSize: typeof args.options.sectorsize === "string" ? parseIntFlexible(args.options.sectorsize) : undefined,
+	});
+
+	const byTag =
+		typeof args.options.lcfg === "string"
+			? feeLcfgByTag(parseFeeLcfg(fs.readFileSync(args.options.lcfg, "utf8")))
+			: undefined;
+
+	if (args.options.json) {
+		const enriched = result.chunks.map(c => {
+			const def = byTag?.get(c.tag);
+			const netLen = def?.payloadLength ?? c.size;
+			return {
+				tag: c.tag,
+				name: def?.name,
+				bank: c.bank,
+				slotIndex: c.slotIndex,
+				consistent: c.consistent,
+				headerAddress: c.headerAddress,
+				payloadAddress: c.payloadAddress,
+				netLength: netLen,
+				rawSize: c.size,
+				payloadHex: Array.from(c.data.subarray(0, netLen))
+					.map(x => x.toString(16).padStart(2, "0"))
+					.join(""),
+			};
+		});
+		console.log(JSON.stringify({ chipBase: result.chipBase, alignment: result.alignment, blocks: enriched }, null, 2));
+		return 0;
+	}
+
+	console.log(`base:      0x${result.baseAddress.toString(16)}`);
+	console.log(`chipBase:  0x${result.chipBase.toString(16)}`);
+	console.log(`alignment: ${result.alignment}`);
+	for (const s of result.sections) {
+		console.log(
+			`sector ${s.bank}: id=0x${s.id.toString(16)} ltSize=${s.ltSize} usedSlots=${s.usedSlots} chunks=${s.chunks.length}`,
+		);
+	}
+	console.log(`\nblocks: ${result.chunks.length}\n`);
+	console.log("  tag   slot  ok  header      payload     len   name");
+	for (const c of result.chunks) {
+		const def = byTag?.get(c.tag);
+		const netLen = def?.payloadLength ?? c.size;
+		console.log(
+			`  ${String(c.tag).padStart(4)}  ${String(c.slotIndex).padStart(4)}  ${c.consistent ? " " : "!"}   ` +
+				`0x${c.headerAddress.toString(16).padStart(8, "0")}  0x${c.payloadAddress
+					.toString(16)
+					.padStart(8, "0")}  ${String(netLen).padStart(4)}  ${def?.name ?? "(unknown tag)"}`,
+		);
+	}
+	return 0;
+}
+
 function main(): number {
 	const args = parseArgs(process.argv.slice(2));
 	switch (args.command) {
@@ -270,6 +339,8 @@ function main(): number {
 			return cmdDecode(args);
 		case "import":
 			return cmdImport(args);
+		case "feev3":
+			return cmdFeeV3(args);
 		case "help":
 		default:
 			console.log(
@@ -282,6 +353,7 @@ function main(): number {
 					"  image  <file.mot|hex> [--at <addr>] [--len <n>]  Decode an S-record/Intel HEX image",
 					"  decode <file> --struct <def.blk> [--at <addr>]   Decode a struct at an address",
 					"  import --nvm <f> [--fee <f>] [--fls <f>] [--json] Import a block catalog from ECUC ARXML",
+					"  feev3  <file.mot|hex> [--lcfg <Fee_Lcfg.c>] [--json]  Parse a Vector FEE V3 container into blocks",
 					"",
 					`crc presets: ${Object.keys(crcPresets).join(", ")}`,
 				].join("\n"),
