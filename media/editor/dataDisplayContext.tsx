@@ -38,6 +38,12 @@ const selectionStateKey = "DisplayContextSelection";
 
 type SelectionState = { start: number; end: number; dir: RangeDirection }[];
 
+/** The element + byte the shared NVM hover popover should attach to. */
+export interface NvmHoverTarget {
+	el: HTMLElement;
+	byte: number;
+}
+
 /**
  * Data management context component. Initially we used Recoil for this, but
  * this ended up introducing performance issues with very many components.
@@ -216,6 +222,24 @@ export class DisplayContext {
 			this.hoverChangeHandlers.get(this._hoveredByte.key)?.(true);
 			this.hoverChangeHandlers.get(this._hoveredByte.other().key)?.(true);
 		}
+	}
+
+	/**
+	 * Target for the single, shared NVM hover popover. Set by whichever cell the
+	 * pointer is over; consumed by one popover component (see `NvmHoverPopover`)
+	 * so that scanning across bytes never spawns a popover per cell.
+	 */
+	private _nvmHover?: NvmHoverTarget;
+	private readonly nvmHoverEmitter = new EventEmitter<NvmHoverTarget | undefined>();
+	public readonly onDidChangeNvmHover = this.nvmHoverEmitter.addListener;
+
+	public get nvmHover(): NvmHoverTarget | undefined {
+		return this._nvmHover;
+	}
+
+	public set nvmHover(target: NvmHoverTarget | undefined) {
+		this._nvmHover = target;
+		this.nvmHoverEmitter.emit(target);
 	}
 
 	/**

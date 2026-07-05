@@ -75,15 +75,15 @@ export class NvmStudioTree implements vscode.TreeDataProvider<StudioNode> {
 				item.iconPath = new vscode.ThemeIcon("symbol-numeric");
 				break;
 		}
-		if (node.offset !== undefined && (node.kind === "bookmark" || node.kind === "tagAssignment")) {
+		if (
+			node.offset !== undefined &&
+			(node.kind === "bookmark" || node.kind === "tagAssignment" || node.kind === "note")
+		) {
 			item.command = {
 				command: "hexEditor.nvm.jumpTo",
 				title: "Jump",
 				arguments: [node.offset],
 			};
-		}
-		if (node.kind === "note") {
-			item.command = { command: "hexEditor.nvm.openNoteNode", title: "Open note", arguments: [node] };
 		}
 		return item;
 	}

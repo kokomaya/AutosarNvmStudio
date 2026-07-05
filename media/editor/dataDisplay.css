@@ -130,6 +130,37 @@
 	width: calc(var(--cell-size) * 0.7) !important;
 }
 
+/* Collapse/expand chevron toggle used in column headers. */
+.collapseToggle {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 20px;
+	height: 20px;
+	padding: 0;
+	border: none;
+	background: transparent;
+	color: inherit;
+	cursor: pointer;
+	opacity: 0.8;
+	border-radius: 3px;
+	vertical-align: middle;
+}
+.collapseToggle:hover {
+	opacity: 1;
+	background: var(--vscode-toolbar-hoverBackground);
+}
+.collapseToggle svg {
+	width: 16px;
+	height: 16px;
+	fill: currentColor;
+}
+.collapseHeaderRow {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+}
+
 /* NVM tooltip styles */
 .nvmTooltip {
 	padding: 6px 8px;

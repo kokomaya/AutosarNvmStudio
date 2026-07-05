@@ -4,6 +4,8 @@
 import ArrowRight from "@vscode/codicons/src/icons/arrow-right.svg";
 import BookmarkIcon from "@vscode/codicons/src/icons/bookmark.svg";
 import CheckIcon from "@vscode/codicons/src/icons/check.svg";
+import ChevronDown from "@vscode/codicons/src/icons/chevron-down.svg";
+import ChevronRight from "@vscode/codicons/src/icons/chevron-right.svg";
 import EditIcon from "@vscode/codicons/src/icons/edit.svg";
 import EyeIcon from "@vscode/codicons/src/icons/eye.svg";
 import NoteIcon from "@vscode/codicons/src/icons/note.svg";
@@ -35,7 +37,7 @@ import {
 	useIsUnsaved,
 } from "./dataDisplayContext";
 import { DataInspectorAside } from "./dataInspector";
-import { useGlobalHandler, useLastAsyncRecoilValue } from "./hooks";
+import { useGlobalHandler, useLastAsyncRecoilValue, usePersistedState } from "./hooks";
 import * as select from "./state";
 import { strings } from "./strings";
 import {
@@ -80,7 +82,10 @@ const Address: React.FC<React.HTMLAttributes<HTMLDivElement>> = ({ children, ...
 
 export const DataHeader: React.FC = () => {
 	const editorSettings = useRecoilValue(select.editorSettings);
+	const setEditorSettings = useSetRecoilState(select.editorSettings);
 	const inspectorLocation = useRecoilValue(select.dataInspectorLocation);
+	const showDecoded = editorSettings.showDecodedText;
+	const toggleDecoded = () => setEditorSettings(s => ({ ...s, showDecodedText: !s.showDecodedText }));
 
 	return (
 		<div className={style.header}>
@@ -92,18 +97,25 @@ export const DataHeader: React.FC = () => {
 					<Byte key={i} value={i & 0xff} />
 				))}
 			</DataCellGroup>
-			{editorSettings.showDecodedText && (
-				// Calculated decoded width so that the Data Inspector is displayed at the right position
-				// Flex-shrink prevents the data inspector overlapping on narrow screens
-				<DataCellGroup
-					style={{
-						width: `calc(var(--cell-size) * ${editorSettings.columnWidth * textCellWidth})`,
-						flexShrink: 0,
-					}}
+			{/* Decoded text column: collapsible via the chevron; expanded by default. */}
+			<DataCellGroup
+				style={{
+					width: showDecoded
+						? `calc(var(--cell-size) * ${editorSettings.columnWidth * textCellWidth})`
+						: undefined,
+					flexShrink: 0,
+				}}
+			>
+				<button
+					className={style.collapseToggle}
+					title={showDecoded ? "Collapse decoded text" : "Show decoded text"}
+					aria-label={showDecoded ? "Collapse decoded text" : "Show decoded text"}
+					onClick={toggleDecoded}
 				>
-					{strings.decodedText}
-				</DataCellGroup>
-			)}
+					{showDecoded ? <ChevronDown /> : <ChevronRight />}
+				</button>
+				{showDecoded && strings.decodedText}
+			</DataCellGroup>
 			{inspectorLocation === InspectorLocation.Aside && <DataInspector />}
 		</div>
 	);
@@ -112,15 +124,30 @@ export const DataHeader: React.FC = () => {
 /** Component that shows a Data Inspector header, and the inspector itself directly below when appropriate. */
 const DataInspector: React.FC = () => {
 	const [isInspecting, setIsInspecting] = useState(false);
+	const [collapsed, setCollapsed] = usePersistedState("nvmInspectorCollapsed", false);
 	return (
-		<DataCellGroup style={{ position: "relative", flexGrow: 1 }}>
-			{isInspecting ? "Data Inspector" : null}
-			<div
-				className={style.dataInspectorWrap}
-				style={{ "--scrollbar-width": `${getScrollDimensions().width}px` } as React.CSSProperties}
-			>
-				<DataInspectorAside onInspecting={setIsInspecting} />
+		<DataCellGroup style={{ position: "relative", flexGrow: 1, flexShrink: 0 }}>
+			<div className={style.collapseHeaderRow}>
+				<button
+					className={style.collapseToggle}
+					title={collapsed ? "Show data inspector" : "Collapse data inspector"}
+					aria-label={collapsed ? "Show data inspector" : "Collapse data inspector"}
+					onClick={() => setCollapsed(c => !c)}
+				>
+					{collapsed ? <ChevronRight /> : <ChevronDown />}
+				</button>
+				{!collapsed && (isInspecting ? "Data Inspector" : null)}
 			</div>
+			{!collapsed && (
+				<div
+					className={style.dataInspectorWrap}
+					style={
+						{ "--scrollbar-width": `${getScrollDimensions().width}px` } as React.CSSProperties
+					}
+				>
+					<DataInspectorAside onInspecting={setIsInspecting} />
+				</div>
+			)}
 		</DataCellGroup>
 	);
 };
@@ -320,7 +347,231 @@ export const DataDisplay: React.FC = () => {
 		<div ref={containerRef} className={style.dataDisplay}>
 			<DataRows />
 			<PastePopup context={pasting} hide={clearPasting} />
+			<NvmHoverPopover />
 		</div>
+	);
+};
+
+/**
+ * The single, shared NVM hover popover. Instead of every data cell owning a
+ * popover (which spawned overlapping popovers + afterimages while scanning), one
+ * instance listens to `ctx.nvmHover` and renders at most one popover, anchored
+ * stably per unit/note so it doesn't chase the pointer byte-by-byte.
+ */
+const NvmHoverPopover: React.FC = () => {
+	const ctx = useDisplayContext();
+	const fields = useRecoilValue(select.nvmFieldRanges);
+	const selectedUnit = useRecoilValue(select.selectedNvmUnitAtom);
+	const annotations = useRecoilValue(select.nvmAnnotationsAtom);
+	const setSelectedNvmBlock = useSetRecoilState(select.selectedNvmBlockAtom);
+	const setOffset = useSetRecoilState(select.offset);
+	const columnWidth = useRecoilValue(select.columnWidth);
+
+	const [byte, setByte] = useState<number | null>(null);
+	const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
+	const shownKey = useRef<string | null>(null);
+	const hideTimer = useRef<ReturnType<typeof setTimeout>>();
+
+	const cancelHide = useCallback(() => {
+		if (hideTimer.current) {
+			clearTimeout(hideTimer.current);
+			hideTimer.current = undefined;
+		}
+	}, []);
+	const hideNow = useCallback(() => {
+		cancelHide();
+		setByte(null);
+		setAnchorEl(null);
+		shownKey.current = null;
+	}, [cancelHide]);
+	const scheduleHide = useCallback(() => {
+		cancelHide();
+		hideTimer.current = setTimeout(hideNow, 250);
+	}, [cancelHide, hideNow]);
+
+	const keyForByte = useCallback(
+		(b: number): string => {
+			const note = annotations.notes.find(n => b >= n.start && b < n.end);
+			if (note) {
+				return `note:${note.id}`;
+			}
+			const field = fields.find(f => b >= f.start && b < f.end);
+			return field ? `unit:${field.unit}` : `byte:${b}`;
+		},
+		[annotations, fields],
+	);
+
+	useEffect(() => {
+		const d = ctx.onDidChangeNvmHover(target => {
+			if (!target) {
+				scheduleHide();
+				return;
+			}
+			cancelHide();
+			setByte(target.byte);
+			// Only re-anchor when moving to a different unit/note, so the popover
+			// stays put while scanning within one block.
+			const key = keyForByte(target.byte);
+			if (key !== shownKey.current) {
+				shownKey.current = key;
+				setAnchorEl(target.el);
+			}
+		});
+		return () => d.dispose();
+	}, [ctx, scheduleHide, cancelHide, keyForByte]);
+	useEffect(() => cancelHide, [cancelHide]);
+
+	if (byte === null || !anchorEl) {
+		return null;
+	}
+
+	const field = fields.find(f => byte >= f.start && byte < f.end);
+	const block = field?.block;
+	const isSelectedUnit = !!field && field.unit === selectedUnit;
+	const note = annotations.notes.find(n => byte >= n.start && byte < n.end);
+
+	if (!note && !(isSelectedUnit && block)) {
+		return null;
+	}
+
+	const jumpTo = (target: number) => {
+		setOffset(select.startOfRowContainingByte(target, columnWidth));
+		ctx.focusedElement = new FocusedElement(false, target);
+	};
+
+	return (
+		<VsTooltipPopover
+			anchor={anchorEl}
+			hide={hideNow}
+			visible
+			className={style.nvmTooltip}
+			onMouseEnter={cancelHide}
+			onMouseLeave={scheduleHide}
+		>
+			<div className={style.nvmTooltipContent}>
+				{note && (
+					<>
+						<div className={style.nvmTooltipTitle}>{note.title ?? "Note"}</div>
+						<div className={style.nvmNoteBody}>
+							{(note.body ?? "").slice(0, 600) || "(empty note)"}
+						</div>
+						<div className={style.nvmTooltipActions}>
+							<button
+								className={style.nvmActionButton}
+								onClick={() => {
+									select.sendAnnotationCommand({ kind: "openNote", id: note.id });
+									hideNow();
+								}}
+							>
+								<EditIcon />
+								Open / edit
+							</button>
+						</div>
+					</>
+				)}
+				{isSelectedUnit && block && (
+					<>
+						<div className={style.nvmTooltipTitle}>{block.name ?? block.id}</div>
+						{field && (
+							<div className={style.nvmTooltipSubtitle}>
+								{field.fieldName} ({field.kind})
+							</div>
+						)}
+						<div className={style.nvmTooltipDetails}>
+							Offset: 0x{block.offset.toString(16).toUpperCase()} • {block.length} bytes
+						</div>
+						<div className={style.nvmTooltipActions}>
+							<button
+								className={style.nvmActionButton}
+								title="Select this block"
+								onClick={() => {
+									setSelectedNvmBlock(block);
+									hideNow();
+								}}
+							>
+								<CheckIcon />
+								Select
+							</button>
+							<button
+								className={style.nvmActionButton}
+								title="Reveal the block start"
+								onClick={() => {
+									setOffset(block.offset);
+									hideNow();
+								}}
+							>
+								<EyeIcon />
+								Reveal
+							</button>
+							{field?.link && (
+								<button
+									className={style.nvmActionButton}
+									title={
+										field.link.label
+											? `Jump to ${field.link.label}`
+											: "Jump to linked address"
+									}
+									onClick={() => {
+										jumpTo(field.link!.targetOffset);
+										hideNow();
+									}}
+								>
+									<ArrowRight />
+									Jump
+								</button>
+							)}
+							<button
+								className={style.nvmActionButton}
+								title="Add a bookmark at this block"
+								onClick={() => {
+									select.sendAnnotationCommand({
+										kind: "addBookmark",
+										offset: block.offset,
+										label: block.name ?? block.id,
+									});
+									hideNow();
+								}}
+							>
+								<BookmarkIcon />
+								Bookmark
+							</button>
+							<button
+								className={style.nvmActionButton}
+								title="Attach a note to this block"
+								onClick={() => {
+									select.sendAnnotationCommand({
+										kind: "addNote",
+										start: field?.start ?? block.offset,
+										end: field?.end ?? block.offset + block.length,
+										title: block.name ?? block.id,
+									});
+									hideNow();
+								}}
+							>
+								<NoteIcon />
+								Note
+							</button>
+							<button
+								className={style.nvmActionButton}
+								title="Tag this range (choose/create a tag)"
+								onClick={() => {
+									select.sendAnnotationCommand({
+										kind: "assignTag",
+										tagId: "__prompt__",
+										start: field?.start ?? block.offset,
+										end: field?.end ?? block.offset + block.length,
+									});
+									hideNow();
+								}}
+							>
+								<TagIcon />
+								Tag
+							</button>
+						</div>
+					</>
+				)}
+			</div>
+		</VsTooltipPopover>
 	);
 };
 
@@ -514,49 +765,25 @@ const DataCell: React.FC<{
 		},
 		[columnWidth],
 	);
-
-	const [anchor, setAnchor] = useState<Element | null>(null);
-	const [noteAnchor, setNoteAnchor] = useState<Element | null>(null);
-	// Hiding the hover popovers is deferred so the pointer can travel from the
-	// cell to the popover (and click its buttons) without it vanishing. Entering
-	// the popover cancels the pending hide; leaving it re-schedules one.
-	const hideTimer = useRef<ReturnType<typeof setTimeout>>();
-	const cancelHide = useCallback(() => {
-		if (hideTimer.current) {
-			clearTimeout(hideTimer.current);
-			hideTimer.current = undefined;
-		}
-	}, []);
-	const scheduleHide = useCallback(() => {
-		cancelHide();
-		hideTimer.current = setTimeout(() => {
-			setAnchor(null);
-			setNoteAnchor(null);
-		}, 250);
-	}, [cancelHide]);
-	useEffect(() => cancelHide, [cancelHide]);
+	// Whether this cell has hover content worth a popover (a note, or a byte of
+	// the currently selected NVM unit). The popover itself is a single, shared
+	// component (`NvmHoverPopover`) driven through the display context, so moving
+	// the pointer across bytes never spawns one popover per cell (which caused
+	// afterimages + jank).
+	const hasHoverPopover = (isSelectedUnit && !!nvmBlock) || !!note;
 	const onMouseEnter = useCallback(() => {
-		cancelHide();
 		ctx.hoveredByte = focusedElement;
 		if (!isAppend && ctx.isSelecting !== undefined) {
 			ctx.replaceLastSelectionRange(Range.inclusive(ctx.isSelecting, offset));
 		}
-		// Only show the NVM popover for the currently selected unit, so unselected
-		// bytes behave like the plain hex editor.
-		if (isSelectedUnit && elRef.current) {
-			setAnchor(elRef.current);
-		}
-		// A noted byte shows its note on hover regardless of selection.
-		if (note && elRef.current) {
-			setNoteAnchor(elRef.current);
-		}
-	}, [offset, focusedElement, isSelectedUnit, note, cancelHide]);
+		ctx.nvmHover = hasHoverPopover && elRef.current ? { el: elRef.current, byte: offset } : undefined;
+	}, [offset, focusedElement, hasHoverPopover]);
 
 	const onMouseLeave = useCallback(
 		(e: React.MouseEvent) => {
 			ctx.hoveredByte = undefined;
-			if (nvmBlock || note) {
-				scheduleHide();
+			if (hasHoverPopover) {
+				ctx.nvmHover = undefined;
 			}
 			if (!isAppend && e.buttons & 1 && ctx.isSelecting === undefined) {
 				ctx.isSelecting = offset;
@@ -567,7 +794,7 @@ const DataCell: React.FC<{
 				}
 			}
 		},
-		[offset, isAppend, nvmBlock, note, scheduleHide],
+		[offset, isAppend, hasHoverPopover],
 	);
 
 	const onMouseDown = useCallback(
@@ -763,7 +990,6 @@ const DataCell: React.FC<{
 				? style.dataCellInsertBefore
 				: style.dataCellInsertMiddle;
 	return (
-		<>
 		<span
 			ref={elRef}
 			tabIndex={0}
@@ -818,146 +1044,6 @@ const DataCell: React.FC<{
 			{note && <span aria-hidden className={style.nvmNoteDot} />}
 			{firstOctetOfEdit !== undefined ? firstOctetOfEdit.toString(16).toUpperCase() : children}
 	</span>
-		{note && (
-			<VsTooltipPopover
-				anchor={noteAnchor}
-				hide={() => setNoteAnchor(null)}
-				visible={!!noteAnchor}
-				className={style.nvmTooltip}
-				onMouseEnter={cancelHide}
-				onMouseLeave={scheduleHide}
-			>
-				<div className={style.nvmTooltipContent}>
-					<div className={style.nvmTooltipTitle}>{note.title ?? "Note"}</div>
-					<div className={style.nvmNoteBody}>
-						{(note.body ?? "").slice(0, 600) || "(empty note)"}
-					</div>
-					<div className={style.nvmTooltipActions}>
-						<button
-							className={style.nvmActionButton}
-							onClick={() => {
-								select.sendAnnotationCommand({ kind: "openNote", id: note.id });
-								setNoteAnchor(null);
-							}}
-						>
-							<EditIcon />
-							Open / edit
-						</button>
-					</div>
-				</div>
-			</VsTooltipPopover>
-		)}
-		{isSelectedUnit && nvmBlock && (
-			<VsTooltipPopover
-				anchor={anchor}
-				hide={() => setAnchor(null)}
-				visible={!!anchor}
-				className={style.nvmTooltip}
-				onMouseEnter={cancelHide}
-				onMouseLeave={scheduleHide}
-			>
-				<div className={style.nvmTooltipContent}>
-					<div className={style.nvmTooltipTitle}>{nvmBlock.name ?? nvmBlock.id}</div>
-					{nvmField && (
-						<div className={style.nvmTooltipSubtitle}>
-							{nvmField.fieldName} ({nvmField.kind})
-						</div>
-					)}
-					<div className={style.nvmTooltipDetails}>
-						Offset: 0x{nvmBlock.offset.toString(16).toUpperCase()} • {nvmBlock.length} bytes
-					</div>
-					<div className={style.nvmTooltipActions}>
-						<button
-							className={style.nvmActionButton}
-							title="Select this block"
-							onClick={() => {
-								setSelectedNvmBlock(nvmBlock);
-								setAnchor(null);
-							}}
-						>
-							<CheckIcon />
-							Select
-						</button>
-						<button
-							className={style.nvmActionButton}
-							title="Reveal the block start"
-							onClick={() => {
-								setOffset(nvmBlock.offset);
-								setAnchor(null);
-							}}
-						>
-							<EyeIcon />
-							Reveal
-						</button>
-						{nvmField?.link && (
-							<button
-								className={style.nvmActionButton}
-								title={
-									nvmField.link.label
-										? `Jump to ${nvmField.link.label}`
-										: "Jump to linked address"
-								}
-								onClick={() => {
-									jumpTo(nvmField.link!.targetOffset);
-									setAnchor(null);
-								}}
-							>
-								<ArrowRight />
-								Jump
-							</button>
-						)}
-						<button
-							className={style.nvmActionButton}
-							title="Add a bookmark at this block"
-							onClick={() => {
-								select.sendAnnotationCommand({
-									kind: "addBookmark",
-									offset: nvmBlock.offset,
-									label: nvmBlock.name ?? nvmBlock.id,
-								});
-								setAnchor(null);
-							}}
-						>
-							<BookmarkIcon />
-							Bookmark
-						</button>
-						<button
-							className={style.nvmActionButton}
-							title="Attach a note to this block"
-							onClick={() => {
-								select.sendAnnotationCommand({
-									kind: "addNote",
-									start: nvmField?.start ?? nvmBlock.offset,
-									end: nvmField?.end ?? nvmBlock.offset + nvmBlock.length,
-									title: nvmBlock.name ?? nvmBlock.id,
-								});
-								setAnchor(null);
-							}}
-						>
-							<NoteIcon />
-							Note
-						</button>
-						<button
-							className={style.nvmActionButton}
-							title="Tag this range (choose/create a tag)"
-							onClick={() => {
-								select.sendAnnotationCommand({
-									kind: "assignTag",
-									tagId: "__prompt__",
-									start: nvmField?.start ?? nvmBlock.offset,
-									end: nvmField?.end ?? nvmBlock.offset + nvmBlock.length,
-								});
-								setAnchor(null);
-							}}
-						>
-							<TagIcon />
-							Tag
-						</button>
-					</div>
-				</div>
-			</VsTooltipPopover>
-		)}
-		</>
 	);
 };
 
