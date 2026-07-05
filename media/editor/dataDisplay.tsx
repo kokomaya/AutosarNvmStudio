@@ -1,6 +1,13 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license
 
+import ArrowRight from "@vscode/codicons/src/icons/arrow-right.svg";
+import BookmarkIcon from "@vscode/codicons/src/icons/bookmark.svg";
+import CheckIcon from "@vscode/codicons/src/icons/check.svg";
+import EditIcon from "@vscode/codicons/src/icons/edit.svg";
+import EyeIcon from "@vscode/codicons/src/icons/eye.svg";
+import NoteIcon from "@vscode/codicons/src/icons/note.svg";
+import TagIcon from "@vscode/codicons/src/icons/tag.svg";
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRecoilValue, useSetRecoilState } from "recoil";
 import { HexDecorator } from "../../shared/decorators";
@@ -827,12 +834,13 @@ const DataCell: React.FC<{
 					</div>
 					<div className={style.nvmTooltipActions}>
 						<button
-							className={style.vsButton}
+							className={style.nvmActionButton}
 							onClick={() => {
 								select.sendAnnotationCommand({ kind: "openNote", id: note.id });
 								setNoteAnchor(null);
 							}}
 						>
+							<EditIcon />
 							Open / edit
 						</button>
 					</div>
@@ -860,26 +868,30 @@ const DataCell: React.FC<{
 					</div>
 					<div className={style.nvmTooltipActions}>
 						<button
-							className={style.vsButton}
+							className={style.nvmActionButton}
+							title="Select this block"
 							onClick={() => {
 								setSelectedNvmBlock(nvmBlock);
 								setAnchor(null);
 							}}
 						>
+							<CheckIcon />
 							Select
 						</button>
 						<button
-							className={style.vsButton}
+							className={style.nvmActionButton}
+							title="Reveal the block start"
 							onClick={() => {
 								setOffset(nvmBlock.offset);
 								setAnchor(null);
 							}}
 						>
+							<EyeIcon />
 							Reveal
 						</button>
 						{nvmField?.link && (
 							<button
-								className={style.vsButton}
+								className={style.nvmActionButton}
 								title={
 									nvmField.link.label
 										? `Jump to ${nvmField.link.label}`
@@ -890,11 +902,12 @@ const DataCell: React.FC<{
 									setAnchor(null);
 								}}
 							>
-								Jump →
+								<ArrowRight />
+								Jump
 							</button>
 						)}
 						<button
-							className={style.vsButton}
+							className={style.nvmActionButton}
 							title="Add a bookmark at this block"
 							onClick={() => {
 								select.sendAnnotationCommand({
@@ -905,10 +918,11 @@ const DataCell: React.FC<{
 								setAnchor(null);
 							}}
 						>
-							★ Bookmark
+							<BookmarkIcon />
+							Bookmark
 						</button>
 						<button
-							className={style.vsButton}
+							className={style.nvmActionButton}
 							title="Attach a note to this block"
 							onClick={() => {
 								select.sendAnnotationCommand({
@@ -920,10 +934,11 @@ const DataCell: React.FC<{
 								setAnchor(null);
 							}}
 						>
-							✎ Note
+							<NoteIcon />
+							Note
 						</button>
 						<button
-							className={style.vsButton}
+							className={style.nvmActionButton}
 							title="Tag this range (choose/create a tag)"
 							onClick={() => {
 								select.sendAnnotationCommand({
@@ -935,7 +950,8 @@ const DataCell: React.FC<{
 								setAnchor(null);
 							}}
 						>
-							🏷 Tag
+							<TagIcon />
+							Tag
 						</button>
 					</div>
 				</div>

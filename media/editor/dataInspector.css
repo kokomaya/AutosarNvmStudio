@@ -38,104 +38,157 @@
 }
 
 .nvmTagSection {
-	padding: 0.5rem;
+	padding: 0.6rem 0.5rem;
 	border-top: 1px solid var(--vscode-panel-border);
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
 }
 
-.nvmTagSection h4 {
-	margin: 0 0 0.35rem 0;
-	font-size: 0.9em;
+.nvmTagHeader {
+	font-size: 0.85em;
 	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	font-weight: 600;
 	opacity: 0.8;
+}
+
+.nvmTagEmpty {
+	font-size: 0.85em;
+	opacity: 0.6;
+	font-style: italic;
 }
 
 .nvmTagChips {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 4px;
-	margin-bottom: 0.4rem;
 }
 
 .nvmTagChip {
 	display: inline-flex;
 	align-items: center;
-	gap: 4px;
-	padding: 1px 6px;
-	border-radius: 10px;
+	gap: 5px;
+	padding: 1px 4px 1px 6px;
+	border-radius: 3px;
 	font-size: 0.85em;
-	color: #1f1f1f;
-	border: 1px solid rgba(0, 0, 0, 0.15);
+	background: var(--vscode-badge-background);
+	color: var(--vscode-badge-foreground);
+	border: 1px solid var(--vscode-contrastBorder, transparent);
 }
 
-.nvmTagChip button {
-	background: transparent;
-	border: none;
-	cursor: pointer;
-	color: inherit;
-	padding: 0;
-	line-height: 1;
-	font-weight: 700;
+.nvmTagDot {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	flex: 0 0 auto;
+	box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2) inset;
+}
+
+.nvmTagChipLabel {
+	max-width: 140px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 .nvmTagRow {
 	display: flex;
 	align-items: center;
 	gap: 6px;
-	margin-bottom: 4px;
 }
 
-.nvmTagRow input[type="text"] {
+.nvmTagInput {
 	flex: 1;
 	min-width: 0;
 	background: var(--vscode-input-background);
 	color: var(--vscode-input-foreground);
-	border: 1px solid var(--vscode-input-border, transparent);
-	padding: 2px 4px;
+	border: 1px solid var(--vscode-input-border, var(--vscode-dropdown-border, transparent));
+	padding: 3px 6px;
+	border-radius: 2px;
 }
 
-.nvmTagRow input[type="color"] {
-	width: 22px;
-	height: 22px;
+.nvmTagInput:focus {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: -1px;
+}
+
+.nvmTagColor {
+	width: 24px;
+	height: 24px;
 	padding: 0;
-	border: none;
+	border: 1px solid var(--vscode-input-border, transparent);
+	border-radius: 2px;
 	background: transparent;
 	cursor: pointer;
+	flex: 0 0 auto;
 }
 
-.nvmTagManage {
-	margin-top: 0.4rem;
+/* Primary text+icon button (VS Code button styling). */
+.nvmTagBtn {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	background: var(--vscode-button-background);
+	color: var(--vscode-button-foreground);
+	border: none;
+	padding: 3px 10px;
+	border-radius: 2px;
+	cursor: pointer;
+	flex: 0 0 auto;
+}
+
+.nvmTagBtn:hover:not(:disabled) {
+	background: var(--vscode-button-hoverBackground);
+}
+
+.nvmTagBtn:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+
+/* Subtle icon-only button (remove / delete). */
+.nvmTagIconBtn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 20px;
+	height: 20px;
+	padding: 0;
+	border: none;
+	border-radius: 3px;
+	background: transparent;
+	color: inherit;
+	cursor: pointer;
+	opacity: 0.75;
+	flex: 0 0 auto;
+}
+
+.nvmTagIconBtn:hover {
+	opacity: 1;
+	background: var(--vscode-toolbar-hoverBackground);
+}
+
+.nvmTagBtn svg,
+.nvmTagIconBtn svg {
+	width: 14px;
+	height: 14px;
+	fill: currentColor;
 }
 
 .nvmTagManage summary {
 	cursor: pointer;
 	opacity: 0.8;
 	font-size: 0.85em;
+	user-select: none;
+	margin-bottom: 4px;
 }
 
-.nvmTagAssign {
-	display: flex;
-	gap: 6px;
-	align-items: center;
-	margin-bottom: 0.4rem;
+.nvmTagManage[open] summary {
+	margin-bottom: 6px;
 }
 
-.nvmTagAssign select,
-.nvmTagAssign input {
-	background: var(--vscode-input-background);
-	color: var(--vscode-input-foreground);
-	border: 1px solid var(--vscode-input-border, transparent);
-	padding: 2px 4px;
-}
-
-.nvmTagSection button.vsBtn {
-	background: var(--vscode-button-background);
-	color: var(--vscode-button-foreground);
-	border: none;
-	padding: 2px 8px;
-	cursor: pointer;
-}
-
-.nvmTagSection button.vsBtn:hover {
-	background: var(--vscode-button-hoverBackground);
+.nvmTagManage > .nvmTagRow {
+	margin-bottom: 4px;
 }
 

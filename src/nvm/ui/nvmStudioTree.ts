@@ -2,11 +2,12 @@
 // Licensed under the MIT license.
 
 /**
- * "NVM Studio" sidebar: a tree of the active dump's bookmarks and notes
- * (à la vscode-bookmarks). Selecting a bookmark/note jumps the hex editor to it;
- * context actions delete/open. Tags are managed in the data inspector. Add
- * actions live in the editor's right-click menu, keyboard shortcuts, and the
- * command palette.
+ * "NVM Studio" sidebar: a tree of the active dump's bookmarks, tag instances and
+ * notes (à la vscode-bookmarks). Selecting a bookmark / tagged range / note jumps
+ * the hex editor to it; context actions delete/open. Tag *definitions* (create /
+ * rename / recolor / delete) are managed in the data inspector; this view lists
+ * where each tag is *applied*. Add actions live in the editor's right-click menu,
+ * keyboard shortcuts, and the command palette.
  */
 
 import * as vscode from "vscode";
@@ -96,6 +97,7 @@ export class NvmStudioTree implements vscode.TreeDataProvider<StudioNode> {
 			const set = await this.annotations.get(doc.uri);
 			return [
 				{ kind: "group", group: "bookmarks", label: "Bookmarks", description: `${set.bookmarks.length}` },
+				{ kind: "group", group: "tags", label: "Tags", description: `${set.tagAssignments.length}` },
 				{ kind: "group", group: "notes", label: "Notes", description: `${set.notes.length}` },
 			];
 		}

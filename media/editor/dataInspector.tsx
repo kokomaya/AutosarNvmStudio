@@ -1,3 +1,6 @@
+import AddIcon from "@vscode/codicons/src/icons/add.svg";
+import CloseIcon from "@vscode/codicons/src/icons/close.svg";
+import TrashIcon from "@vscode/codicons/src/icons/trash.svg";
 import React, { Suspense, useEffect, useMemo, useState } from "react";
 // recoil imports below
 import { useRecoilValue, useSetRecoilState } from "recoil";
@@ -164,35 +167,45 @@ const NvmTagSection: React.FC<{ start: number; end: number }> = ({ start, end })
 
 	return (
 		<div className={style.nvmTagSection}>
-			<h4>Tags</h4>
+			<div className={style.nvmTagHeader}>Tags</div>
+
 			<div className={style.nvmTagChips}>
-				{covering.length === 0 && <span style={{ opacity: 0.6 }}>None on this range</span>}
+				{covering.length === 0 && (
+					<span className={style.nvmTagEmpty}>No tags on this range</span>
+				)}
 				{covering.map(a => {
 					const tag = tagsById.get(a.tagId);
 					return (
-						<span
-							key={a.id}
-							className={style.nvmTagChip}
-							style={{ background: tag?.color ?? "#c8c8c8" }}
-							title={tag?.label}
-						>
-							{tag?.label ?? "?"}
+						<span key={a.id} className={style.nvmTagChip} title={tag?.label}>
+							<span
+								className={style.nvmTagDot}
+								style={{ background: tag?.color ?? "#c8c8c8" }}
+							/>
+							<span className={style.nvmTagChipLabel}>{tag?.label ?? "?"}</span>
 							<button
+								className={style.nvmTagIconBtn}
 								title="Remove tag from this range"
 								onClick={() =>
 									select.sendAnnotationCommand({ kind: "unassignTag", assignmentId: a.id })
 								}
 							>
-								×
+								<CloseIcon />
 							</button>
 						</span>
 					);
 				})}
 			</div>
 
-			<div className={style.nvmTagAssign}>
-				<select value={pendingTag} onChange={e => assignExisting(e.target.value)}>
-					<option value="">Add existing…</option>
+			<div className={style.nvmTagRow}>
+				<select
+					className={style.nvmTagInput}
+					value={pendingTag}
+					onChange={e => assignExisting(e.target.value)}
+					disabled={unassigned.length === 0}
+				>
+					<option value="">
+						{unassigned.length === 0 ? "No more tags to add" : "Add existing tag…"}
+					</option>
 					{unassigned.map(t => (
 						<option key={t.id} value={t.id}>
 							{t.label}
@@ -201,25 +214,42 @@ const NvmTagSection: React.FC<{ start: number; end: number }> = ({ start, end })
 				</select>
 			</div>
 
-			<div className={style.nvmTagAssign}>
+			<div className={style.nvmTagRow}>
 				<input
+					className={style.nvmTagColor}
+					type="color"
+					value={newColor}
+					title="New tag color"
+					onChange={e => setNewColor(e.target.value)}
+				/>
+				<input
+					className={style.nvmTagInput}
 					type="text"
 					placeholder="New tag name"
 					value={newLabel}
 					onChange={e => setNewLabel(e.target.value)}
 					onKeyDown={e => e.key === "Enter" && createAndAssign()}
 				/>
-				<input type="color" value={newColor} onChange={e => setNewColor(e.target.value)} />
-				<button className="vsBtn" onClick={createAndAssign}>
+				<button
+					className={style.nvmTagBtn}
+					title="Create and apply tag"
+					disabled={!newLabel.trim()}
+					onClick={createAndAssign}
+				>
+					<AddIcon />
 					Add
 				</button>
 			</div>
 
 			<details className={style.nvmTagManage}>
 				<summary>Manage tags ({annotations.tags.length})</summary>
+				{annotations.tags.length === 0 && (
+					<div className={style.nvmTagEmpty}>No tags defined yet</div>
+				)}
 				{annotations.tags.map(t => (
 					<div key={t.id} className={style.nvmTagRow}>
 						<input
+							className={style.nvmTagColor}
 							type="color"
 							value={t.color ?? "#c8c8c8"}
 							title="Recolor"
@@ -232,6 +262,7 @@ const NvmTagSection: React.FC<{ start: number; end: number }> = ({ start, end })
 							}
 						/>
 						<input
+							className={style.nvmTagInput}
 							type="text"
 							defaultValue={t.label}
 							title="Rename (press Enter)"
@@ -245,11 +276,11 @@ const NvmTagSection: React.FC<{ start: number; end: number }> = ({ start, end })
 							}}
 						/>
 						<button
-							className="vsBtn"
+							className={style.nvmTagIconBtn}
 							title="Delete tag and all its assignments"
 							onClick={() => select.sendAnnotationCommand({ kind: "deleteTag", tagId: t.id })}
 						>
-							Delete
+							<TrashIcon />
 						</button>
 					</div>
 				))}

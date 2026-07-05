@@ -153,9 +153,37 @@
 }
 .nvmTooltipActions {
 	display: flex;
-	gap: 6px;
-	justify-content: flex-end;
+	gap: 4px;
+	justify-content: flex-start;
 	flex-wrap: wrap;
+}
+
+/* VS Code-styled action buttons inside the NVM tooltip. */
+.nvmActionButton {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 2px 8px;
+	font-size: 0.9em;
+	line-height: 18px;
+	color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+	background: var(--vscode-button-secondaryBackground, var(--vscode-toolbar-hoverBackground));
+	border: none;
+	border-radius: 2px;
+	cursor: pointer;
+	white-space: nowrap;
+}
+.nvmActionButton:hover {
+	background: var(--vscode-button-secondaryHoverBackground, var(--vscode-toolbar-hoverBackground));
+}
+.nvmActionButton:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: -1px;
+}
+.nvmActionButton svg {
+	width: 14px;
+	height: 14px;
+	fill: currentColor;
 }
 
 /* A note's body preview inside its hover popover. */
