@@ -106,8 +106,21 @@
           },
           "hexeditor.nvm.allowExternalEngines": {
             "type": "boolean",
-            "default": false,
-            "description": "Allow NVM layout descriptors to run an external engine script (`engineScript`) from the workspace. This EXECUTES workspace JavaScript in the desktop extension host. Requires a trusted workspace and a one-time per-file confirmation. Not available in web/virtual environments."
+            "default": true,
+            "description": "Master switch for NVM layout engines. When a layout descriptor (`*.nvmlayout.json`) declares an `engineScript`/`engine`, it is executed to parse the dump — but only in the desktop extension host, in a trusted workspace, and after a one-time per-file confirmation. Set to `false` to disable engines entirely for locked-down environments."
+          },
+          "hexeditor.nvm.annotationStorage": {
+            "type": "string",
+            "enum": [
+              "sidecar",
+              "workspaceState"
+            ],
+            "enumDescriptions": [
+              "Store bookmarks/tags/notes in a portable sidecar file next to the dump (<dump>.nvmstudio.json + a <dump>.nvmstudio/ folder for note markdown/images).",
+              "Store annotations in VS Code workspace state (not shareable, no files created)."
+            ],
+            "default": "sidecar",
+            "description": "Where NVM bookmarks, tags and notes are persisted."
           }
         }
       }
@@ -172,6 +185,77 @@
         "title": "Load NVM ARXML"
       },
       {
+        "command": "hexEditor.nvm.installEngine",
+        "category": "NVM",
+        "title": "Install Engine…"
+      },
+      {
+        "command": "hexEditor.nvm.installEngineFromUrl",
+        "category": "NVM",
+        "title": "Install Engine from URL…"
+      },
+      {
+        "command": "hexEditor.nvm.manageEngines",
+        "category": "NVM",
+        "title": "Manage Engines…"
+      },
+      {
+        "command": "hexEditor.nvm.jumpTo",
+        "category": "NVM",
+        "title": "Jump to Annotation"
+      },
+      {
+        "command": "hexEditor.nvm.openNoteNode",
+        "category": "NVM",
+        "title": "Open Note"
+      },
+      {
+        "command": "hexEditor.nvm.deleteAnnotation",
+        "category": "NVM",
+        "title": "Delete",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "hexEditor.nvm.exportReport",
+        "category": "NVM",
+        "title": "Export Report…"
+      },
+      {
+        "command": "hexEditor.nvm.openReportPreview",
+        "category": "NVM",
+        "title": "Open Report Preview",
+        "icon": "$(preview)"
+      },
+      {
+        "command": "hexEditor.nvm.openChat",
+        "category": "NVM",
+        "title": "Ask NVM AI",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "hexEditor.nvm.addBookmarkHere",
+        "category": "NVM",
+        "title": "Add Bookmark Here",
+        "icon": "$(bookmark)"
+      },
+      {
+        "command": "hexEditor.nvm.addNoteHere",
+        "category": "NVM",
+        "title": "Add Note Here",
+        "icon": "$(note)"
+      },
+      {
+        "command": "hexEditor.nvm.tagSelectionHere",
+        "category": "NVM",
+        "title": "Tag Selection…",
+        "icon": "$(tag)"
+      },
+      {
+        "command": "hexEditor.nvm.removeTagHere",
+        "category": "NVM",
+        "title": "Remove Tag Here"
+      },
+      {
         "command": "hexEditor.compareSelected",
         "category": "%name%",
         "title": "%hexEditor.compareSelected%"
@@ -184,6 +268,11 @@
           "title": "%name%",
           "icon": "panel-icon.svg",
           "when": "hexEditor:showSidebarInspector"
+        },
+        {
+          "id": "nvmStudio",
+          "title": "NVM Studio",
+          "icon": "panel-icon.svg"
         }
       ]
     },
@@ -195,8 +284,80 @@
           "name": "%dataInspectorView%",
           "when": "hexEditor:showSidebarInspector"
         }
+      ],
+      "nvmStudio": [
+        {
+          "id": "hexEditor.nvmStudio",
+          "name": "Annotations"
+        }
       ]
     },
+    "chatParticipants": [
+      {
+        "id": "hexEditor.nvm",
+        "name": "nvm",
+        "fullName": "NVM Studio",
+        "description": "Ask about the active AUTOSAR NVM dump (blocks, tags, notes, risks).",
+        "isSticky": true
+      }
+    ],
+    "languageModelTools": [
+      {
+        "name": "nvm_listBlocks",
+        "displayName": "NVM: list blocks",
+        "modelDescription": "List the parsed NVM blocks of the active hex-editor dump (name, offset, length, field count).",
+        "toolReferenceName": "nvmListBlocks",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(list-flat)",
+        "tags": ["nvm", "hexeditor"]
+      },
+      {
+        "name": "nvm_analyzeBlock",
+        "displayName": "NVM: analyze block",
+        "modelDescription": "Return the fields and metadata of a single NVM block in the active dump, matched by name.",
+        "toolReferenceName": "nvmAnalyzeBlock",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(search)",
+        "tags": ["nvm", "hexeditor"],
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "The block name (or a substring) to analyze."
+            }
+          },
+          "required": ["name"]
+        }
+      },
+      {
+        "name": "nvm_listAnnotations",
+        "displayName": "NVM: list annotations",
+        "modelDescription": "List the bookmarks, tags and notes the user created on the active NVM dump.",
+        "toolReferenceName": "nvmListAnnotations",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(bookmark)",
+        "tags": ["nvm", "hexeditor"]
+      },
+      {
+        "name": "nvm_exportReport",
+        "displayName": "NVM: export report",
+        "modelDescription": "Produce a Markdown analysis report for the active NVM dump combining parsed blocks with the user's bookmarks, tags and notes.",
+        "toolReferenceName": "nvmExportReport",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(file)",
+        "tags": ["nvm", "hexeditor"]
+      },
+      {
+        "name": "nvm_riskDetection",
+        "displayName": "NVM: risk detection",
+        "modelDescription": "Run heuristic checks over the active NVM dump's parsed blocks (unresolved names, zero-length blocks, overlaps) and report potential risks.",
+        "toolReferenceName": "nvmRiskDetection",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(warning)",
+        "tags": ["nvm", "hexeditor"]
+      }
+    ],
     "menus": {
       "commandPalette": [
         {
@@ -210,6 +371,57 @@
         {
           "command": "hexEditor.compareSelected",
           "when": "false"
+        },
+        {
+          "command": "hexEditor.nvm.jumpTo",
+          "when": "false"
+        },
+        {
+          "command": "hexEditor.nvm.openNoteNode",
+          "when": "false"
+        },
+        {
+          "command": "hexEditor.nvm.deleteAnnotation",
+          "when": "false"
+        },
+        {
+          "command": "hexEditor.nvm.addBookmarkHere",
+          "when": "hexEditor:isActive"
+        },
+        {
+          "command": "hexEditor.nvm.addNoteHere",
+          "when": "hexEditor:isActive"
+        },
+        {
+          "command": "hexEditor.nvm.tagSelectionHere",
+          "when": "hexEditor:isActive"
+        },
+        {
+          "command": "hexEditor.nvm.removeTagHere",
+          "when": "hexEditor:isActive"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "hexEditor.nvm.openReportPreview",
+          "when": "view == hexEditor.nvmStudio",
+          "group": "navigation@1"
+        },
+        {
+          "command": "hexEditor.nvm.openChat",
+          "when": "view == hexEditor.nvmStudio",
+          "group": "navigation@2"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "hexEditor.nvm.deleteAnnotation",
+          "when": "view == hexEditor.nvmStudio && viewItem =~ /bookmark|note|tagAssignment/",
+          "group": "inline"
+        },
+        {
+          "command": "hexEditor.nvm.openNoteNode",
+          "when": "view == hexEditor.nvmStudio && viewItem == note"
         }
       ],
       "editor/title": [
@@ -217,9 +429,44 @@
           "command": "hexEditor.openFile",
           "group": "navigation@1",
           "when": "activeEditor && config.hexeditor.showOpenFileButton"
+        },
+        {
+          "command": "hexEditor.nvm.openReportPreview",
+          "group": "navigation@2",
+          "when": "activeCustomEditorId == hexEditor.hexedit"
+        },
+        {
+          "command": "hexEditor.nvm.openChat",
+          "group": "navigation@3",
+          "when": "activeCustomEditorId == hexEditor.hexedit"
         }
       ],
       "webview/context": [
+        {
+          "command": "hexEditor.nvm.addBookmarkHere",
+          "group": "nvm@1",
+          "when": "hexEditor:isActive"
+        },
+        {
+          "command": "hexEditor.nvm.addNoteHere",
+          "group": "nvm@2",
+          "when": "hexEditor:isActive"
+        },
+        {
+          "command": "hexEditor.nvm.tagSelectionHere",
+          "group": "nvm@3",
+          "when": "hexEditor:isActive"
+        },
+        {
+          "command": "hexEditor.nvm.removeTagHere",
+          "group": "nvm@4",
+          "when": "hexEditor:isActive"
+        },
+        {
+          "command": "hexEditor.nvm.openReportPreview",
+          "group": "nvm@5",
+          "when": "hexEditor:isActive"
+        },
         {
           "command": "hexEditor.copyOffsetAsDec",
           "group": "9_cutcopypaste",
@@ -258,8 +505,21 @@
       {
         "command": "hexEditor.switchEditMode",
         "key": "Insert",
-        "when": "hexEditor:isActive"
-      }
+        "when": "hexEditor:isActive"      },
+      {
+        "command": "hexEditor.nvm.addBookmarkHere",
+        "key": "ctrl+alt+b",
+        "when": "activeCustomEditorId == hexEditor.hexedit"
+      },
+      {
+        "command": "hexEditor.nvm.addNoteHere",
+        "key": "ctrl+alt+n",
+        "when": "activeCustomEditorId == hexEditor.hexedit"
+      },
+      {
+        "command": "hexEditor.nvm.tagSelectionHere",
+        "key": "ctrl+alt+t",
+        "when": "activeCustomEditorId == hexEditor.hexedit"      }
     ]
   },
   "scripts": {

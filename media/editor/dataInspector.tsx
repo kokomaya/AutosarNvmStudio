@@ -104,8 +104,157 @@ export const DataInspectorAside: React.FC<{ onInspecting?(isInspecting: boolean)
 				</div>
 			) : null}
 
+			{/* Tag manager for the current block/byte target */}
+			{selectedBlock ? (
+				<NvmTagSection
+					start={selectedBlock.offset}
+					end={selectedBlock.offset + selectedBlock.length}
+				/>
+			) : inspected ? (
+				<NvmTagSection start={inspected.byte} end={inspected.byte + 1} />
+			) : null}
+
 			{inspected ? <InspectorContents columns={2} offset={inspected.byte} /> : null}
 		</Suspense>
+	);
+};
+
+/**
+ * Full tag manager scoped to the current inspector target ([start, end)):
+ * lists tags covering the range with quick removal, assigns existing/new tags,
+ * and (collapsed) lets the user rename, recolor or delete tag definitions.
+ */
+const NvmTagSection: React.FC<{ start: number; end: number }> = ({ start, end }) => {
+	const annotations = useRecoilValue(select.nvmAnnotationsAtom);
+	const tagsById = useMemo(() => {
+		const m = new Map<string, (typeof annotations.tags)[number]>();
+		for (const t of annotations.tags) {
+			m.set(t.id, t);
+		}
+		return m;
+	}, [annotations.tags]);
+
+	// Assignments overlapping the current target range.
+	const covering = useMemo(
+		() => annotations.assignments.filter(a => a.start < end && a.end > start),
+		[annotations.assignments, start, end],
+	);
+
+	const [pendingTag, setPendingTag] = useState("");
+	const [newLabel, setNewLabel] = useState("");
+	const [newColor, setNewColor] = useState("#4e9cff");
+
+	const assignExisting = (tagId: string) => {
+		if (tagId) {
+			select.sendAnnotationCommand({ kind: "assignTag", tagId, start, end });
+			setPendingTag("");
+		}
+	};
+
+	const createAndAssign = () => {
+		const label = newLabel.trim();
+		if (!label) {
+			return;
+		}
+		select.sendAnnotationCommand({ kind: "createAndAssignTag", label, color: newColor, start, end });
+		setNewLabel("");
+	};
+
+	const unassigned = annotations.tags.filter(t => !covering.some(a => a.tagId === t.id));
+
+	return (
+		<div className={style.nvmTagSection}>
+			<h4>Tags</h4>
+			<div className={style.nvmTagChips}>
+				{covering.length === 0 && <span style={{ opacity: 0.6 }}>None on this range</span>}
+				{covering.map(a => {
+					const tag = tagsById.get(a.tagId);
+					return (
+						<span
+							key={a.id}
+							className={style.nvmTagChip}
+							style={{ background: tag?.color ?? "#c8c8c8" }}
+							title={tag?.label}
+						>
+							{tag?.label ?? "?"}
+							<button
+								title="Remove tag from this range"
+								onClick={() =>
+									select.sendAnnotationCommand({ kind: "unassignTag", assignmentId: a.id })
+								}
+							>
+								×
+							</button>
+						</span>
+					);
+				})}
+			</div>
+
+			<div className={style.nvmTagAssign}>
+				<select value={pendingTag} onChange={e => assignExisting(e.target.value)}>
+					<option value="">Add existing…</option>
+					{unassigned.map(t => (
+						<option key={t.id} value={t.id}>
+							{t.label}
+						</option>
+					))}
+				</select>
+			</div>
+
+			<div className={style.nvmTagAssign}>
+				<input
+					type="text"
+					placeholder="New tag name"
+					value={newLabel}
+					onChange={e => setNewLabel(e.target.value)}
+					onKeyDown={e => e.key === "Enter" && createAndAssign()}
+				/>
+				<input type="color" value={newColor} onChange={e => setNewColor(e.target.value)} />
+				<button className="vsBtn" onClick={createAndAssign}>
+					Add
+				</button>
+			</div>
+
+			<details className={style.nvmTagManage}>
+				<summary>Manage tags ({annotations.tags.length})</summary>
+				{annotations.tags.map(t => (
+					<div key={t.id} className={style.nvmTagRow}>
+						<input
+							type="color"
+							value={t.color ?? "#c8c8c8"}
+							title="Recolor"
+							onChange={e =>
+								select.sendAnnotationCommand({
+									kind: "recolorTag",
+									tagId: t.id,
+									color: e.target.value,
+								})
+							}
+						/>
+						<input
+							type="text"
+							defaultValue={t.label}
+							title="Rename (press Enter)"
+							onKeyDown={e => {
+								if (e.key === "Enter") {
+									const label = (e.target as HTMLInputElement).value.trim();
+									if (label) {
+										select.sendAnnotationCommand({ kind: "renameTag", tagId: t.id, label });
+									}
+								}
+							}}
+						/>
+						<button
+							className="vsBtn"
+							title="Delete tag and all its assignments"
+							onClick={() => select.sendAnnotationCommand({ kind: "deleteTag", tagId: t.id })}
+						>
+							Delete
+						</button>
+					</div>
+				))}
+			</details>
+		</div>
 	);
 };
 

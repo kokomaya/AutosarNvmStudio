@@ -32,6 +32,12 @@ export interface LayoutConfig {
 	 * `src/nvm/layout/externalEngine.ts`.
 	 */
 	engineScript?: string;
+	/**
+	 * Id of an **installed engine pack** (see `src/nvm/engines/`), e.g.
+	 * `"vector-fee-v3"` or `"vector-fee-v3@1.0.0"`. Resolved by the engine
+	 * manager to the pack's entry script. Same trust gate as `engineScript`.
+	 */
+	engine?: string;
 	/** Free-form options passed to the selected built-in `provider` (engine). */
 	options?: Record<string, unknown>;
 	/** Optional gating so a descriptor only applies to matching files. */

@@ -16,6 +16,7 @@ import {
     InspectorLocation,
     MessageHandler,
     MessageType,
+    NvmAnnotationsView,
     NvmBlockInfo,
     ReadRangeResponseMessage,
     ReadyResponseMessage,
@@ -601,6 +602,89 @@ export const nvmFieldRangesPage = selectorFamily({
 			return all.filter(r => r.start < pageEnd && r.end > pageStart);
 		},
 });
+
+/**
+ * NVM annotations (bookmarks / tags / notes) pushed from the extension. Captured
+ * eagerly (like blocks) so the startup push is never lost to a subscription race.
+ */
+const emptyAnnotations: NvmAnnotationsView = { tags: [], badges: [], assignments: [], notes: [], bookmarks: [] };
+let latestNvmAnnotations: NvmAnnotationsView = emptyAnnotations;
+const nvmAnnotationListeners = new Set<(a: NvmAnnotationsView) => void>();
+registerHandler(MessageType.SetNvmAnnotations, (msg: any) => {
+	latestNvmAnnotations = msg.annotations ?? emptyAnnotations;
+	for (const listener of nvmAnnotationListeners) {
+		listener(latestNvmAnnotations);
+	}
+});
+
+export const nvmAnnotationsAtom = atom<NvmAnnotationsView>({
+	key: "nvmAnnotationsAtom",
+	default: emptyAnnotations,
+	effects_UNSTABLE: [
+		fx => {
+			fx.setSelf(latestNvmAnnotations);
+			const listener = (a: NvmAnnotationsView) => fx.setSelf(a);
+			nvmAnnotationListeners.add(listener);
+			return () => {
+				nvmAnnotationListeners.delete(listener);
+			};
+		},
+	],
+});
+
+/** Tag definitions indexed by id, for quick badge/chip lookup. */
+export const nvmTagsById = selector({
+	key: "nvmTagsById",
+	get: ({ get }) => {
+		const map = new Map<string, NvmAnnotationsView["tags"][number]>();
+		for (const t of get(nvmAnnotationsAtom).tags) {
+			map.set(t.id, t);
+		}
+		return map;
+	},
+});
+
+/** Tag badges overlapping a page (for the per-cell corner marker). */
+export const nvmTagBadgesPage = selectorFamily({
+	key: "nvmTagBadgesPage",
+	get:
+		(pageNumber: number) =>
+		({ get }) => {
+			const all = get(nvmAnnotationsAtom).badges;
+			if (all.length === 0) {
+				return [];
+			}
+			const pageSize = get(dataPageSize);
+			const pageStart = pageSize * pageNumber;
+			const pageEnd = pageStart + pageSize;
+			return all.filter(b => b.start < pageEnd && b.end > pageStart);
+		},
+});
+
+/** Notes overlapping a page (for the per-cell indicator + hover). */
+export const nvmNotesPage = selectorFamily({
+	key: "nvmNotesPage",
+	get:
+		(pageNumber: number) =>
+		({ get }) => {
+			const all = get(nvmAnnotationsAtom).notes;
+			if (all.length === 0) {
+				return [];
+			}
+			const pageSize = get(dataPageSize);
+			const pageStart = pageSize * pageNumber;
+			const pageEnd = pageStart + pageSize;
+			return all.filter(n => n.start < pageEnd && n.end > pageStart);
+		},
+});
+
+/** Send a mutation request for annotations to the extension host. */
+export const sendAnnotationCommand = (
+	command: import("../../shared/protocol").NvmAnnotationCommand,
+): void => {
+	messageHandler.sendEvent({ type: MessageType.NvmAnnotationCommand, command });
+};
+
 
 const rawDataPages = selectorFamily({
 	key: "rawDataPages",

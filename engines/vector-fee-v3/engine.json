@@ -1,0 +1,14 @@
+{
+  "id": "vector-fee-v3",
+  "version": "1.0.0",
+  "displayName": "Vector MICROSAR FEE V3 (link table)",
+  "description": "Decodes Vector MICROSAR FEE V3 link-table NVM dumps into named blocks. Declares sources: { feeLcfg: Fee_Lcfg.c } for business block names.",
+  "entry": "vectorFeeV3.engine.js",
+  "publisher": "reference",
+  "source": "bundled",
+  "sdkVersion": 2,
+  "capabilities": {
+    "sources": { "feeLcfg": "Fee_Lcfg.c" },
+    "options": ["alignment", "numberOfSectors", "sectorSize", "structure"]
+  }
+}

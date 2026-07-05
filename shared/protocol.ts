@@ -25,6 +25,7 @@ export const enum MessageType {
 	PopDisplayedOffset,
 	DeleteAccepted,
 	TriggerCopyAs,
+	SetNvmAnnotations,
 	//#endregion
 	//#region from webview
 	ReadyRequest,
@@ -39,6 +40,7 @@ export const enum MessageType {
 	UpdateEditorSettings,
 	DoPaste,
 	DoCopy,
+	NvmAnnotationCommand,
 	//#endregion
 }
 
@@ -131,6 +133,83 @@ export interface NvmBlockInfo {
 export interface SetNvmBlocksMessage {
 	type: MessageType.SetNvmBlocks;
 	blocks: NvmBlockInfo[];
+}
+
+// --- NVM annotations (bookmarks / tags / notes) ---
+
+/** A user tag definition. */
+export interface NvmTagView {
+	id: string;
+	label: string;
+	color?: string;
+}
+
+/** A byte range that carries one or more tags (for the corner badge). */
+export interface NvmTagBadge {
+	start: number;
+	end: number;
+	tagIds: string[];
+	/** The tag-assignment ids covering this range (for removal). */
+	assignmentIds: string[];
+}
+
+/** A single tag application (assignment-level, for precise add/remove UI). */
+export interface NvmTagAssignmentView {
+	id: string;
+	tagId: string;
+	start: number;
+	end: number;
+}
+
+/** A note projected for the webview (hover + panel). */
+export interface NvmNoteView {
+	id: string;
+	start: number;
+	end: number;
+	title?: string;
+	/** Markdown body, included so hovers/panels can render without a round-trip. */
+	body?: string;
+}
+
+/** A bookmark projected for the webview. */
+export interface NvmBookmarkView {
+	id: string;
+	offset: number;
+	label?: string;
+}
+
+/** The full annotation projection pushed to the webview. */
+export interface NvmAnnotationsView {
+	tags: NvmTagView[];
+	badges: NvmTagBadge[];
+	assignments: NvmTagAssignmentView[];
+	notes: NvmNoteView[];
+	bookmarks: NvmBookmarkView[];
+}
+
+export interface SetNvmAnnotationsMessage {
+	type: MessageType.SetNvmAnnotations;
+	annotations: NvmAnnotationsView;
+}
+
+/** A mutation the webview asks the host to perform on annotations. */
+export type NvmAnnotationCommand =
+	| { kind: "addBookmark"; offset: number; label?: string }
+	| { kind: "removeBookmark"; id: string }
+	| { kind: "createTag"; label: string; color?: string }
+	| { kind: "renameTag"; tagId: string; label: string }
+	| { kind: "recolorTag"; tagId: string; color: string }
+	| { kind: "deleteTag"; tagId: string }
+	| { kind: "assignTag"; tagId: string; start: number; end: number }
+	| { kind: "createAndAssignTag"; label: string; color?: string; start: number; end: number }
+	| { kind: "unassignTag"; assignmentId: string }
+	| { kind: "addNote"; start: number; end: number; title?: string }
+	| { kind: "openNote"; id: string }
+	| { kind: "deleteNote"; id: string };
+
+export interface NvmAnnotationCommandMessage {
+	type: MessageType.NvmAnnotationCommand;
+	command: NvmAnnotationCommand;
 }
 
 export interface SetEditModeMessage {
@@ -251,6 +330,7 @@ export type ToWebviewMessage =
 	| SavedMessage
 	| ReloadMessage
 	| SetNvmBlocksMessage
+	| SetNvmAnnotationsMessage
 	| GoToOffsetMessage
 	| SetEditsMessage
 	| SetFocusedByteMessage
@@ -346,7 +426,8 @@ export type FromWebviewMessage =
 	| UpdateEditorSettings
 	| PasteMessage
 	| CopyMessage
-	| RequestDeletesMessage;
+	| RequestDeletesMessage
+	| NvmAnnotationCommandMessage;
 
 export type ExtensionHostMessageHandler = MessageHandler<ToWebviewMessage, FromWebviewMessage>;
 export type WebviewMessageHandler = MessageHandler<FromWebviewMessage, ToWebviewMessage>;

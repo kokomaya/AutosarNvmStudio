@@ -4,22 +4,22 @@
 import { TelemetryReporter } from "@vscode/extension-telemetry";
 import * as vscode from "vscode";
 import {
-    HexDocumentEdit,
-    HexDocumentEditOp,
-    HexDocumentEditReference,
+	HexDocumentEdit,
+	HexDocumentEditOp,
+	HexDocumentEditReference,
 } from "../shared/hexDocumentModel";
 import {
-    CopyFormat,
-    Endianness,
-    ExtensionHostMessageHandler,
-    FromWebviewMessage,
-    ICodeSettings,
-    IEditorSettings,
-    InspectorLocation,
-    MessageHandler,
-    MessageType,
-    PasteMode,
-    ToWebviewMessage,
+	CopyFormat,
+	Endianness,
+	ExtensionHostMessageHandler,
+	FromWebviewMessage,
+	ICodeSettings,
+	IEditorSettings,
+	InspectorLocation,
+	MessageHandler,
+	MessageType,
+	PasteMode,
+	ToWebviewMessage,
 } from "../shared/protocol";
 import { deserializeEdits, serializeEdits } from "../shared/serialization";
 import { ILocalizedStrings, placeholder1 } from "../shared/strings";
@@ -28,13 +28,15 @@ import { DataInspectorView } from "./dataInspectorView";
 import { disposeAll } from "./dispose";
 import { HexDocument } from "./hexDocument";
 import { HexEditorRegistry } from "./hexEditorRegistry";
+import { AnnotationService } from "./nvm/annotations/annotationService";
+import { EngineManager } from "./nvm/engines/engineManager";
 import {
-    applyPalette,
-    LayoutConfig,
-    LayoutInput,
-    matchesConfig,
-    ResolvedLayout,
-    resolveNvmBlocks,
+	applyPalette,
+	LayoutConfig,
+	LayoutInput,
+	matchesConfig,
+	ResolvedLayout,
+	resolveNvmBlocks,
 } from "./nvm/layout";
 import { invalidateExternalEngine, isNodeHost, loadExternalEngine } from "./nvm/layout/externalEngine";
 import { ISearchRequest, LiteralSearchRequest, RegexSearchRequest } from "./searchRequest";
@@ -63,10 +65,11 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 		telemetryReporter: TelemetryReporter,
 		dataInspectorView: DataInspectorView,
 		registry: HexEditorRegistry,
+		annotations: AnnotationService,
 	): vscode.Disposable {
 		return vscode.window.registerCustomEditorProvider(
 			HexEditorProvider.viewType,
-			new HexEditorProvider(context, telemetryReporter, dataInspectorView, registry),
+			new HexEditorProvider(context, telemetryReporter, dataInspectorView, registry, annotations),
 			{
 				supportsMultipleEditorsPerDocument: false,
 			},
@@ -80,7 +83,14 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 		private readonly _telemetryReporter: TelemetryReporter,
 		private readonly _dataInspectorView: DataInspectorView,
 		private readonly _registry: HexEditorRegistry,
+		private readonly _annotations: AnnotationService,
 	) {}
+
+	/** Lazily-created manager for installed external engine packs. */
+	private _engineManager?: EngineManager;
+	private get engineManager(): EngineManager {
+		return (this._engineManager ??= new EngineManager(this._context));
+	}
 
 	async openCustomDocument(
 		uri: vscode.Uri,
@@ -285,38 +295,78 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 	}
 
 	/**
-	 * If a matching descriptor declares an `engineScript`, resolve and run it —
-	 * but only when every safety condition holds: a Node desktop host, a trusted
-	 * workspace, the `hexeditor.nvm.allowExternalEngines` setting, and a one-time
-	 * per-file user confirmation. Any failure falls through to the built-ins.
+	 * If a matching descriptor declares an `engine` (installed pack) or an
+	 * `engineScript` (workspace-local file), resolve and run it — but only when
+	 * every safety condition holds: a Node desktop host, a trusted workspace, the
+	 * `hexeditor.nvm.allowExternalEngines` setting, and a one-time per-file
+	 * confirmation. Any failure falls through to the built-ins.
 	 */
 	private async tryExternalEngine(
 		dir: string,
 		input: LayoutInput,
 	): Promise<NvmLoadResult | undefined> {
 		const config = input.configs.find(
-			c => typeof c.engineScript === "string" && c.engineScript && matchesConfig(c, input),
+			c =>
+				((typeof c.engine === "string" && c.engine) ||
+					(typeof c.engineScript === "string" && c.engineScript)) &&
+				matchesConfig(c, input),
 		);
-		if (!config?.engineScript) {
+		if (!config) {
 			return undefined;
 		}
 
-		// Executing workspace JS: never on web, never in an untrusted workspace,
-		// only when explicitly enabled.
-		if (!isNodeHost() || !vscode.workspace.isTrusted) {
-			return undefined;
+		// The presence of a layout descriptor that points at an engine is the
+		// user's opt-in: without a layout we cannot parse at all. We still keep
+		// the standard safety net for executing workspace JavaScript — a desktop
+		// host, a trusted workspace, and a one-time per-file confirmation — plus a
+		// master kill-switch setting (defaults on) for locked-down environments.
+		if (!isNodeHost()) {
+			return undefined; // web/virtual host cannot execute a local engine
 		}
 		const enabled = vscode.workspace
 			.getConfiguration("hexeditor")
-			.get<boolean>("nvm.allowExternalEngines", false);
+			.get<boolean>("nvm.allowExternalEngines", true);
 		if (!enabled) {
+			void this.warnEngineBlocked(
+				"NVM layout engines are disabled by the setting `hexeditor.nvm.allowExternalEngines`.",
+				"Enable",
+				async () => {
+					await vscode.workspace
+						.getConfiguration("hexeditor")
+						.update("nvm.allowExternalEngines", true, vscode.ConfigurationTarget.Workspace);
+				},
+			);
+			return undefined;
+		}
+		if (!vscode.workspace.isTrusted) {
+			void this.warnEngineBlocked(
+				"This NVM dump has a layout engine, but the workspace is not trusted so it cannot run.",
+				"Manage Workspace Trust",
+				async () => {
+					await vscode.commands.executeCommand("workbench.trust.manage");
+				},
+			);
 			return undefined;
 		}
 
-		const scriptUri = await this.findNearbyFileUri(dir, config.engineScript);
-		if (!scriptUri) {
-			console.warn(`NVM engineScript "${config.engineScript}" not found near ${dir}`);
-			return undefined;
+		// Resolve the entry: an installed pack id, or a workspace-local script.
+		let scriptUri: vscode.Uri | undefined;
+		let label: string;
+		if (config.engine) {
+			const installed = await this.engineManager.resolve(config.engine);
+			if (!installed) {
+				console.warn(`NVM engine pack "${config.engine}" is not installed.`);
+				return undefined;
+			}
+			scriptUri = installed.entryUri;
+			label = `engine pack "${installed.manifest.id}"`;
+		} else {
+			scriptUri = await this.findNearbyFileUri(dir, config.engineScript!);
+			if (!scriptUri) {
+				console.warn(`NVM engineScript "${config.engineScript}" not found near ${dir}`);
+				return undefined;
+			}
+			label = `engine script "${config.engineScript}"`;
 		}
 
 		if (!(await this.confirmEngineScript(scriptUri))) {
@@ -328,12 +378,39 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 			const engine = await loadExternalEngine(scriptUri.fsPath, stat.mtime);
 			const blocks = engine.parse(input, config.options);
 			applyPalette(blocks, config.palette);
-			return { resolved: { providerId: `external:${engine.id}`, blocks }, engineScriptUri: scriptUri };
+			return {
+				resolved: { providerId: `external:${engine.id}`, blocks },
+				// Only workspace-local scripts are watched for hot reload; installed
+				// packs are immutable until re-installed.
+				engineScriptUri: config.engine ? undefined : scriptUri,
+			};
 		} catch (e) {
 			void vscode.window.showErrorMessage(
-				`Failed to run NVM engine "${config.engineScript}": ${e instanceof Error ? e.message : String(e)}`,
+				`Failed to run NVM ${label}: ${e instanceof Error ? e.message : String(e)}`,
 			);
 			return undefined;
+		}
+	}
+
+	/** Reasons already surfaced this session, so we don't nag on every reopen. */
+	private readonly _warnedEngineReasons = new Set<string>();
+
+	/**
+	 * Surface — once per session per message — that a layout engine was found but
+	 * could not run, with a single actionable button to unblock it.
+	 */
+	private async warnEngineBlocked(
+		message: string,
+		action: string,
+		run: () => Promise<void>,
+	): Promise<void> {
+		if (this._warnedEngineReasons.has(message)) {
+			return;
+		}
+		this._warnedEngineReasons.add(message);
+		const choice = await vscode.window.showWarningMessage(message, action);
+		if (choice === action) {
+			await run();
 		}
 	}
 
@@ -407,7 +484,8 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 								c &&
 								(Array.isArray(c.blocks) ||
 									typeof c.provider === "string" ||
-									typeof c.engineScript === "string")
+									typeof c.engineScript === "string" ||
+									typeof c.engine === "string")
 							) {
 								configs.push(c as LayoutConfig);
 							}
@@ -667,6 +745,8 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 				if (nvmBlocks && nvmBlocks.length > 0) {
 					messaging.sendEvent({ type: MessageType.SetNvmBlocks, blocks: nvmBlocks });
 				}
+				// Push any saved annotations (bookmarks / tags / notes) for this dump.
+				void this.pushAnnotations(messaging, document);
 				return {
 					type: MessageType.ReadyResponse,
 					initialOffset: document.baseAddress,
@@ -770,7 +850,82 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 			case MessageType.UpdateEditorSettings:
 				this.writeEditorSettings(message.editorSettings);
 				break;
+			case MessageType.NvmAnnotationCommand:
+				await this.handleAnnotationCommand(messaging, document, message.command);
+				break;
 		}
+	}
+
+	/** Read the dump's annotations and push the compact view to the webview. */
+	private async pushAnnotations(
+		messaging: ExtensionHostMessageHandler,
+		document: HexDocument,
+	): Promise<void> {
+		try {
+			const annotations = await this._annotations.toView(document.uri);
+			messaging.sendEvent({ type: MessageType.SetNvmAnnotations, annotations });
+		} catch (e) {
+			console.warn("Failed to push NVM annotations:", e);
+		}
+	}
+
+	/** Apply an annotation mutation requested by the webview, then re-push. */
+	private async handleAnnotationCommand(
+		messaging: ExtensionHostMessageHandler,
+		document: HexDocument,
+		command: import("../shared/protocol").NvmAnnotationCommand,
+	): Promise<void> {
+		try {
+			if (command.kind === "openNote") {
+				const uri = this._annotations.noteUri(document.uri, command.id);
+				if (uri) {
+					await vscode.window.showTextDocument(uri, { preview: false });
+				}
+				return;
+			}
+			// A tag assignment with the sentinel id prompts the user to pick or
+			// create a tag (the webview cannot show input UI itself).
+			if (command.kind === "assignTag" && command.tagId === "__prompt__") {
+				const tagId = await this.promptForTag(document);
+				if (!tagId) {
+					return;
+				}
+				command = { ...command, tagId };
+			}
+			await this._annotations.apply(document.uri, command);
+			await this.pushAnnotations(messaging, document);
+		} catch (e) {
+			void vscode.window.showErrorMessage(
+				`NVM annotation failed: ${e instanceof Error ? e.message : String(e)}`,
+			);
+		}
+	}
+
+	/** Prompt to pick an existing tag or create a new one; returns its id. */
+	private async promptForTag(document: HexDocument): Promise<string | undefined> {
+		const set = await this._annotations.get(document.uri);
+		const CREATE = "$(add) Create new tag…";
+		const pick = await vscode.window.showQuickPick(
+			[CREATE, ...set.tags.map(t => `${t.label}`)],
+			{ title: "Assign NVM tag", placeHolder: "Pick a tag or create one" },
+		);
+		if (!pick) {
+			return undefined;
+		}
+		if (pick !== CREATE) {
+			return set.tags.find(t => t.label === pick)?.id;
+		}
+		const label = await vscode.window.showInputBox({
+			title: "New tag",
+			prompt: "Tag name",
+			validateInput: v => (v.trim() ? undefined : "Enter a name"),
+		});
+		if (!label) {
+			return undefined;
+		}
+		await this._annotations.apply(document.uri, { kind: "createTag", label });
+		const updated = await this._annotations.get(document.uri);
+		return updated.tags.find(t => t.label === label)?.id;
 	}
 
 	private publishEdit(

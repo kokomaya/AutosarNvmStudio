@@ -13,8 +13,16 @@ import { HexDiffFSProvider } from "./hexDiffFS";
 import { HexEditorProvider } from "./hexEditorProvider";
 import { HexEditorRegistry } from "./hexEditorRegistry";
 import { prepareLazyInitDiffWorker } from "./initWorker";
+import { registerChatParticipant } from "./nvm/ai/chatParticipant";
+import { registerLmTools } from "./nvm/ai/lmTools";
+import { registerAnnotationCommands } from "./nvm/annotations/annotationCommands";
+import { AnnotationService } from "./nvm/annotations/annotationService";
 import { parseArxmlFile } from "./nvm/arxmlParser";
 import { mapBlocksToBuffer } from "./nvm/blockMapper";
+import { registerEngineCommands } from "./nvm/engines/engineCommands";
+import { registerReportCommands } from "./nvm/report/reportCommands";
+import { registerReportPreview } from "./nvm/report/reportPanel";
+import { registerNvmStudioView } from "./nvm/ui/nvmStudioTree";
 import { showSelectBetweenOffsets } from "./selectBetweenOffsets";
 import StatusEditMode from "./statusEditMode";
 import StatusFocus from "./statusFocus";
@@ -162,13 +170,21 @@ export async function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(copyOffsetAsDec, copyOffsetAsHex);
 	context.subscriptions.push(compareSelectedCommand);
 	context.subscriptions.push(loadNvmArxmlCommand);
+	context.subscriptions.push(...registerEngineCommands(context));
+	const annotationService = new AnnotationService(context);
+	context.subscriptions.push(...registerAnnotationCommands(registry, annotationService));
+	context.subscriptions.push(...registerNvmStudioView(registry, annotationService));
+	context.subscriptions.push(...registerReportCommands(registry, annotationService));
+	context.subscriptions.push(...registerReportPreview(registry, annotationService));
+	context.subscriptions.push(...registerLmTools(registry, annotationService));
+	context.subscriptions.push(...registerChatParticipant(registry, annotationService));
 	context.subscriptions.push(
 		vscode.workspace.registerFileSystemProvider("hexdiff", new HexDiffFSProvider(), {
 			isCaseSensitive: typeof process !== 'undefined' && process.platform !== 'win32' && process.platform !== 'darwin',
 		}),
 	);
 	context.subscriptions.push(
-		HexEditorProvider.register(context, telemetryReporter, dataInspectorProvider, registry),
+		HexEditorProvider.register(context, telemetryReporter, dataInspectorProvider, registry, annotationService),
 	);
 }
 

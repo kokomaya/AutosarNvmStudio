@@ -6,3 +6,4 @@ dist
 !dist/inspector.css
 .DS_Store
 dist/web
+.github/prompts

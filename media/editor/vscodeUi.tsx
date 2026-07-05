@@ -95,6 +95,8 @@ export interface IPopoverProps {
 	onClickOutside?: () => void;
 	role?: string;
 	arrow?: { className: string; size: number };
+	onMouseEnter?: React.MouseEventHandler;
+	onMouseLeave?: React.MouseEventHandler;
 }
 
 const PopoverArrow: React.FC<{ size: number } & React.SVGProps<SVGSVGElement>> = ({

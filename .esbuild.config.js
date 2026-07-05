@@ -63,6 +63,21 @@ build({
 	outfile: "dist/diffWorker.js",
 });
 
+// Build the reference external NVM engine pack (self-contained, loaded at
+// runtime by the desktop host — NOT linked into the extension bundle). Proves
+// the vendor-free core: all Vector layout logic lives here, none in src/shared.
+build({
+	entryPoints: ["engines/vector-fee-v3/src/index.ts"],
+	tsconfig: "./tsconfig.json",
+	bundle: true,
+	format: "cjs",
+	platform: "node",
+	minify,
+	sourcemap: watch,
+	outfile: "dist/engines/vector-fee-v3/vectorFeeV3.engine.js",
+});
+
+
 // Build the data inspector
 build({
 	entryPoints: ["media/data_inspector/inspector.ts"],
@@ -92,3 +107,13 @@ build({
 		: undefined,
 	plugins: [svgr(), css({ v2: true, filter: /\.css$/i })],
 });
+
+// Ship the reference engine pack manifest next to its built entry so the engine
+// manager can install/resolve it like any other pack.
+const fs = require("fs");
+fs.mkdirSync("dist/engines/vector-fee-v3", { recursive: true });
+fs.copyFileSync(
+	"engines/vector-fee-v3/engine.json",
+	"dist/engines/vector-fee-v3/engine.json",
+);
+

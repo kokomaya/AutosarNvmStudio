@@ -2,64 +2,95 @@
 // Licensed under the MIT license.
 
 /**
- * The stable SDK injected into external engine scripts.
+ * The stable, **vendor-neutral** SDK injected into external engine scripts.
  *
- * An engine script (see {@link ExternalEngineModule}) never bundles its own copy
- * of the NVM kernel; instead it receives this object and calls into the
- * authoritative, versioned shared code. Bumping the kernel in a
- * backwards-incompatible way should bump {@link ENGINE_SDK_VERSION} so engines
+ * The extension core carries ZERO vendor/layout knowledge. Engines (including
+ * the reference Vector FEE V3 pack under `engines/`) receive this object and
+ * build their own layout on top of these generic byte/format primitives. No
+ * vendor-specific function (Vector, EB, …) ever appears here.
+ *
+ * Bumping the kernel incompatibly bumps {@link ENGINE_SDK_VERSION} so engines
  * can guard on `sdk.version`.
  */
 
 import {
-    computeCrc,
-    evaluateExpression,
-    feeLcfgByTag,
-    loadHexImage,
-    parseFeeLcfg,
-    parseVectorFeeV3,
-    resolveFieldLink,
+	computeCrc,
+	decodeLinkValue,
+	decodeStruct,
+	evaluateExpression,
+	loadHexImage,
+	parseBlkStruct,
+	parseEcucModule,
+	parseIntelHex,
+	parseSRecord,
+	parseXml,
+	resolveCrcPreset,
+	resolveFieldLink,
+	structByteLength,
 } from "../../../shared/nvm";
-import {
-    buildFeeV3Blocks,
-} from "../feeV3Blocks";
 
 /** Bumped whenever the injected SDK surface changes incompatibly. */
-export const ENGINE_SDK_VERSION = 1;
+export const ENGINE_SDK_VERSION = 2;
 
-/** The API surface handed to every external engine's `createEngine(sdk)`. */
+/** The generic API surface handed to every external engine's `createEngine(sdk)`. */
 export interface EngineSdk {
 	/** SDK contract version; engines may guard on this. */
 	readonly version: number;
-	/** Decode an S-record / Intel HEX text into a sparse {@link MemoryImage}. */
+
+	// --- byte / container decoding ---
+	/** Decode an S-record / Intel HEX text into a sparse image (auto-detect). */
 	readonly loadHexImage: typeof loadHexImage;
-	/** Walk a Vector MICROSAR FEE V3 link-table image. */
-	readonly parseVectorFeeV3: typeof parseVectorFeeV3;
-	/** Parse a `Fee_Lcfg.c` into block definitions. */
-	readonly parseFeeLcfg: typeof parseFeeLcfg;
-	/** Index Fee_Lcfg definitions by link-table tag. */
-	readonly feeLcfgByTag: typeof feeLcfgByTag;
+	/** Decode a Motorola S-record text. */
+	readonly parseSRecord: typeof parseSRecord;
+	/** Decode an Intel HEX text. */
+	readonly parseIntelHex: typeof parseIntelHex;
+
+	// --- integrity ---
 	/** Rocksoft-model CRC (all six presets). */
 	readonly computeCrc: typeof computeCrc;
+	/** Resolve a CRC preset by name. */
+	readonly resolveCrcPreset: typeof resolveCrcPreset;
+
+	// --- expressions & links ---
 	/** The safe whitelist expression evaluator (no `eval`). */
 	readonly evaluateExpression: typeof evaluateExpression;
 	/** Decode + range-check an in-file address into an editor offset. */
 	readonly resolveFieldLink: typeof resolveFieldLink;
-	/** Convenience: the full built-in Vector FEE V3 → blocks pipeline. */
-	readonly buildFeeV3Blocks: typeof buildFeeV3Blocks;
+	/** Decode a raw address value from bytes per an encoding. */
+	readonly decodeLinkValue: typeof decodeLinkValue;
+
+	// --- struct decoding ---
+	/** Parse a `.blk` struct definition. */
+	readonly parseBlkStruct: typeof parseBlkStruct;
+	/** Decode bytes into physical field values per a struct definition. */
+	readonly decodeStruct: typeof decodeStruct;
+	/** Byte length of a struct definition. */
+	readonly structByteLength: typeof structByteLength;
+
+	// --- generic AUTOSAR config (no vendor semantics) ---
+	/** Dependency-free XML parser. */
+	readonly parseXml: typeof parseXml;
+	/** Read a generic ECUC module from ARXML. */
+	readonly parseEcucModule: typeof parseEcucModule;
 }
 
-/** Assemble the injected SDK from the authoritative shared kernel. */
+/** Assemble the injected SDK from the authoritative, vendor-neutral kernel. */
 export function createEngineSdk(): EngineSdk {
 	return {
 		version: ENGINE_SDK_VERSION,
 		loadHexImage,
-		parseVectorFeeV3,
-		parseFeeLcfg,
-		feeLcfgByTag,
+		parseSRecord,
+		parseIntelHex,
 		computeCrc,
+		resolveCrcPreset,
 		evaluateExpression,
 		resolveFieldLink,
-		buildFeeV3Blocks,
+		decodeLinkValue,
+		parseBlkStruct,
+		decodeStruct,
+		structByteLength,
+		parseXml,
+		parseEcucModule,
 	};
 }
+

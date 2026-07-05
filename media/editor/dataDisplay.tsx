@@ -10,6 +10,9 @@ import {
 	DeleteAcceptedMessage,
 	InspectorLocation,
 	MessageType,
+	NvmNoteView,
+	NvmTagBadge,
+	NvmTagView,
 } from "../../shared/protocol";
 import { binarySearch } from "../../shared/util/binarySearch";
 import { Range } from "../../shared/util/range";
@@ -438,6 +441,9 @@ const DataPageContents: React.FC<IDataPageProps> = props => {
 	const decorators = useRecoilValue(select.decoratorsPage(props.pageNo));
 	const nvmFields = useRecoilValue(select.nvmFieldRangesPage(props.pageNo));
 	const selectedUnit = useRecoilValue(select.selectedNvmUnitAtom);
+	const tagBadges = useRecoilValue(select.nvmTagBadgesPage(props.pageNo));
+	const notes = useRecoilValue(select.nvmNotesPage(props.pageNo));
+	const tagsById = useRecoilValue(select.nvmTagsById);
 	const dataPageSelector = select.editedDataPages(props.pageNo);
 	const [data] = useLastAsyncRecoilValue(dataPageSelector);
 
@@ -456,6 +462,9 @@ const DataPageContents: React.FC<IDataPageProps> = props => {
 					decorators={decorators}
 					nvmFields={nvmFields}
 					selectedUnit={selectedUnit}
+					tagBadges={tagBadges}
+					notes={notes}
+					tagsById={tagsById}
 				/>
 			))}
 		</>
@@ -472,7 +481,11 @@ const DataCell: React.FC<{
 	nvmField?: select.NvmFieldRange;
 	// whether this cell's unit is the currently selected (rendered) one
 	isSelectedUnit?: boolean;
-}> = ({ offset, value, className, children, isChar, isAppend, nvmField, isSelectedUnit }) => {
+	// annotation overlays (bookmarks/tags/notes)
+	tagColor?: string;
+	tagTitle?: string;
+	note?: NvmNoteView;
+}> = ({ offset, value, className, children, isChar, isAppend, nvmField, isSelectedUnit, tagColor, tagTitle, note }) => {
 	const elRef = useRef<HTMLSpanElement | null>(null);
 	const focusedElement = new FocusedElement(isChar, offset);
 	const ctx = useDisplayContext();
@@ -496,7 +509,27 @@ const DataCell: React.FC<{
 	);
 
 	const [anchor, setAnchor] = useState<Element | null>(null);
+	const [noteAnchor, setNoteAnchor] = useState<Element | null>(null);
+	// Hiding the hover popovers is deferred so the pointer can travel from the
+	// cell to the popover (and click its buttons) without it vanishing. Entering
+	// the popover cancels the pending hide; leaving it re-schedules one.
+	const hideTimer = useRef<ReturnType<typeof setTimeout>>();
+	const cancelHide = useCallback(() => {
+		if (hideTimer.current) {
+			clearTimeout(hideTimer.current);
+			hideTimer.current = undefined;
+		}
+	}, []);
+	const scheduleHide = useCallback(() => {
+		cancelHide();
+		hideTimer.current = setTimeout(() => {
+			setAnchor(null);
+			setNoteAnchor(null);
+		}, 250);
+	}, [cancelHide]);
+	useEffect(() => cancelHide, [cancelHide]);
 	const onMouseEnter = useCallback(() => {
+		cancelHide();
 		ctx.hoveredByte = focusedElement;
 		if (!isAppend && ctx.isSelecting !== undefined) {
 			ctx.replaceLastSelectionRange(Range.inclusive(ctx.isSelecting, offset));
@@ -506,13 +539,17 @@ const DataCell: React.FC<{
 		if (isSelectedUnit && elRef.current) {
 			setAnchor(elRef.current);
 		}
-	}, [offset, focusedElement, isSelectedUnit]);
+		// A noted byte shows its note on hover regardless of selection.
+		if (note && elRef.current) {
+			setNoteAnchor(elRef.current);
+		}
+	}, [offset, focusedElement, isSelectedUnit, note, cancelHide]);
 
 	const onMouseLeave = useCallback(
 		(e: React.MouseEvent) => {
 			ctx.hoveredByte = undefined;
-			if (nvmBlock) {
-				setAnchor(null);
+			if (nvmBlock || note) {
+				scheduleHide();
 			}
 			if (!isAppend && e.buttons & 1 && ctx.isSelecting === undefined) {
 				ctx.isSelecting = offset;
@@ -523,7 +560,7 @@ const DataCell: React.FC<{
 				}
 			}
 		},
-		[offset, isAppend, nvmBlock],
+		[offset, isAppend, nvmBlock, note, scheduleHide],
 	);
 
 	const onMouseDown = useCallback(
@@ -742,8 +779,9 @@ const DataCell: React.FC<{
 			onMouseLeave={onMouseLeave}
 			onKeyDown={onKeyDown}
 			data-key={focusedElement.key}
-			style={
-				isSelectedUnit && nvmField
+			style={{
+				position: tagColor || note ? "relative" : undefined,
+				...(isSelectedUnit && nvmField
 					? {
 							background: colorForNvmField(nvmField.kind, nvmField.color),
 							color: "#1f1f1f",
@@ -753,22 +791,62 @@ const DataCell: React.FC<{
 								? { cursor: "pointer", textDecoration: "underline" }
 								: undefined),
 						}
-					: undefined
-			}
+					: undefined),
+			}}
 			title={
-				isSelectedUnit && nvmField?.link
-					? `Ctrl/Cmd-click to jump${nvmField.link.label ? ` to ${nvmField.link.label}` : ""}`
-					: undefined
+				tagTitle
+					? `Tags: ${tagTitle}`
+					: isSelectedUnit && nvmField?.link
+						? `Ctrl/Cmd-click to jump${nvmField.link.label ? ` to ${nvmField.link.label}` : ""}`
+						: undefined
 			}
 		>
+			{tagColor && (
+				<span
+					aria-hidden
+					className={style.nvmTagBadge}
+					style={{ borderTopColor: tagColor }}
+				/>
+			)}
+			{note && <span aria-hidden className={style.nvmNoteDot} />}
 			{firstOctetOfEdit !== undefined ? firstOctetOfEdit.toString(16).toUpperCase() : children}
 	</span>
+		{note && (
+			<VsTooltipPopover
+				anchor={noteAnchor}
+				hide={() => setNoteAnchor(null)}
+				visible={!!noteAnchor}
+				className={style.nvmTooltip}
+				onMouseEnter={cancelHide}
+				onMouseLeave={scheduleHide}
+			>
+				<div className={style.nvmTooltipContent}>
+					<div className={style.nvmTooltipTitle}>{note.title ?? "Note"}</div>
+					<div className={style.nvmNoteBody}>
+						{(note.body ?? "").slice(0, 600) || "(empty note)"}
+					</div>
+					<div className={style.nvmTooltipActions}>
+						<button
+							className={style.vsButton}
+							onClick={() => {
+								select.sendAnnotationCommand({ kind: "openNote", id: note.id });
+								setNoteAnchor(null);
+							}}
+						>
+							Open / edit
+						</button>
+					</div>
+				</div>
+			</VsTooltipPopover>
+		)}
 		{isSelectedUnit && nvmBlock && (
 			<VsTooltipPopover
 				anchor={anchor}
 				hide={() => setAnchor(null)}
 				visible={!!anchor}
 				className={style.nvmTooltip}
+				onMouseEnter={cancelHide}
+				onMouseLeave={scheduleHide}
 			>
 				<div className={style.nvmTooltipContent}>
 					<div className={style.nvmTooltipTitle}>{nvmBlock.name ?? nvmBlock.id}</div>
@@ -815,6 +893,50 @@ const DataCell: React.FC<{
 								Jump →
 							</button>
 						)}
+						<button
+							className={style.vsButton}
+							title="Add a bookmark at this block"
+							onClick={() => {
+								select.sendAnnotationCommand({
+									kind: "addBookmark",
+									offset: nvmBlock.offset,
+									label: nvmBlock.name ?? nvmBlock.id,
+								});
+								setAnchor(null);
+							}}
+						>
+							★ Bookmark
+						</button>
+						<button
+							className={style.vsButton}
+							title="Attach a note to this block"
+							onClick={() => {
+								select.sendAnnotationCommand({
+									kind: "addNote",
+									start: nvmField?.start ?? nvmBlock.offset,
+									end: nvmField?.end ?? nvmBlock.offset + nvmBlock.length,
+									title: nvmBlock.name ?? nvmBlock.id,
+								});
+								setAnchor(null);
+							}}
+						>
+							✎ Note
+						</button>
+						<button
+							className={style.vsButton}
+							title="Tag this range (choose/create a tag)"
+							onClick={() => {
+								select.sendAnnotationCommand({
+									kind: "assignTag",
+									tagId: "__prompt__",
+									start: nvmField?.start ?? nvmBlock.offset,
+									end: nvmField?.end ?? nvmBlock.offset + nvmBlock.length,
+								});
+								setAnchor(null);
+							}}
+						>
+							🏷 Tag
+						</button>
 					</div>
 				</div>
 			</VsTooltipPopover>
@@ -832,6 +954,9 @@ const DataRowContents: React.FC<{
 	decorators: HexDecorator[];
 	nvmFields: select.NvmFieldRange[];
 	selectedUnit?: string;
+	tagBadges: NvmTagBadge[];
+	notes: NvmNoteView[];
+	tagsById: Map<string, NvmTagView>;
 }> = ({
 	offset,
 	width,
@@ -841,12 +966,21 @@ const DataRowContents: React.FC<{
 	decorators,
 	nvmFields,
 	selectedUnit,
+	tagBadges,
+	notes,
+	tagsById,
 }) => {
 	let memoValue = "";
 	const ctx = useDisplayContext();
 	for (const byte of rawBytes) {
 		memoValue += "," + byte;
 	}
+
+	// A cheap signature so the row re-renders when annotations for it change.
+	const annoSig =
+		tagBadges.map(b => `${b.start}:${b.end}:${b.tagIds.join("+")}`).join("|") +
+		"#" +
+		notes.map(n => `${n.start}:${n.end}`).join("|");
 
 	const { bytes, chars } = useMemo(() => {
 		const bytes: React.ReactChild[] = [];
@@ -891,6 +1025,16 @@ const DataRowContents: React.FC<{
 			const nvmField = nvmFields.find(f => boffset >= f.start && boffset < f.end);
 			const isSelectedUnit = nvmField !== undefined && nvmField.unit === selectedUnit;
 
+			// annotations covering this byte: tag badge (corner) + note (indicator)
+			const tagBadge = tagBadges.find(b => boffset >= b.start && boffset < b.end);
+			const tagColor = tagBadge
+				? tagsById.get(tagBadge.tagIds[0])?.color ?? "var(--vscode-charts-orange)"
+				: undefined;
+			const tagTitle = tagBadge
+				? tagBadge.tagIds.map(id => tagsById.get(id)?.label ?? id).join(", ")
+				: undefined;
+			const note = notes.find(n => boffset >= n.start && boffset < n.end);
+
 			bytes.push(
 				<DataCell
 					key={i}
@@ -901,6 +1045,9 @@ const DataRowContents: React.FC<{
 					value={value}
 					nvmField={nvmField}
 					isSelectedUnit={isSelectedUnit}
+					tagColor={tagColor}
+					tagTitle={tagTitle}
+					note={note}
 				>
 					{value.toString(16).padStart(2, "0").toUpperCase()}
 				</DataCell>,
@@ -929,7 +1076,7 @@ const DataRowContents: React.FC<{
 		}
 
 		return { bytes, chars };
-	}, [memoValue, showDecodedText, isRowWithInsertDataCell, nvmFields, selectedUnit, decorators]);
+	}, [memoValue, showDecodedText, isRowWithInsertDataCell, nvmFields, selectedUnit, decorators, annoSig]);
 
 	return (
 		<>

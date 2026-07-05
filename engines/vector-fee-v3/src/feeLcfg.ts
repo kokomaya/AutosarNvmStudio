@@ -9,8 +9,6 @@
  * chunk) to the logical block name and payload length. This mapping is *not*
  * derivable from the ARXML `FeeBlockNumber` alone, therefore the generated
  * source is required to resolve chunk tags into business block names.
- *
- * See docs/design.md [TODO-Vector].
  */
 
 export interface FeeLcfgBlock {

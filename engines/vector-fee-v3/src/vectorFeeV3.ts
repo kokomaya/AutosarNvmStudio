@@ -4,7 +4,7 @@
 /**
  * Vector MICROSAR FEE "V3" container parser (link-table driven).
  *
- * This is a faithful port of `SectionV3` / `ChunkLinkV3` / `FeeBlockV3` from the
+ * A faithful port of `SectionV3` / `ChunkLinkV3` / `FeeBlockV3` from the
  * reference C# NvmAnalyzer. It recovers each logical NVM block by walking the
  * per-sector link table that MICROSAR FEE maintains at the start of the active
  * sector.
@@ -16,14 +16,9 @@
  *                  a slot of 0xFFFFFFFF is an unused block index.
  *   chunk        : located by working backwards from `linkTarget`:
  *                    ... [header: tag(2) _(2) size(4)] [pad] 0x0A <payload> 0x0A [link]
- *
- * The chunk `tag` equals the FEE link-table index and is resolved to a business
- * block name via `Fee_Lcfg.c` (see feeLcfg.ts).
- *
- * See docs/design.md [TODO-Vector].
  */
 
-import { MemoryImage } from "../memoryImage";
+import { HexImage } from "./types";
 
 export interface FeeV3Options {
 	/** Address alignment in bytes. MICROSAR RAD6xx FEE uses 8. */
@@ -35,23 +30,14 @@ export interface FeeV3Options {
 }
 
 export interface FeeV3Chunk {
-	/** FEE link-table index read from the chunk header (business key). */
 	tag: number;
-	/** Link-table slot the chunk was reached through (should equal `tag`). */
 	slotIndex: number;
-	/** Sector (bank) the chunk lives in. */
 	bank: number;
-	/** Absolute address of the chunk header (tag field). */
 	headerAddress: number;
-	/** Absolute address of the first payload byte (after the 0x0A marker). */
 	payloadAddress: number;
-	/** Absolute address of the link field this chunk was reached through. */
 	linkTargetAddress: number;
-	/** Raw chunk size taken from the header (aligned payload span). */
 	size: number;
-	/** Raw payload bytes, `size` long (before truncation to the net length). */
 	data: Uint8Array;
-	/** True when `slotIndex === tag`. */
 	consistent: boolean;
 }
 
@@ -60,7 +46,6 @@ export interface FeeV3Section {
 	id: number;
 	ltSize: number;
 	linkTableAddress: number;
-	/** Number of non-empty slots in the link table. */
 	usedSlots: number;
 	chunks: FeeV3Chunk[];
 }
@@ -68,10 +53,8 @@ export interface FeeV3Section {
 export interface FeeV3Result {
 	baseAddress: number;
 	alignment: number;
-	/** Chip base address (with bank prefix) that maps to flat index 0. */
 	chipBase: number;
 	sections: FeeV3Section[];
-	/** All decoded chunks across all active sectors. */
 	chunks: FeeV3Chunk[];
 }
 
@@ -90,7 +73,7 @@ function readU32LE(buf: Uint8Array, i: number): number {
  * Parse a Vector FEE V3 image and return every logical block chunk found in the
  * active sector(s).
  */
-export function parseVectorFeeV3(image: MemoryImage, opts: FeeV3Options = {}): FeeV3Result {
+export function parseVectorFeeV3(image: HexImage, opts: FeeV3Options = {}): FeeV3Result {
 	const al = opts.alignment ?? 8;
 	const nrs = opts.numberOfSectors ?? 2;
 	const ssz = opts.sectorSize ?? 0x30000;

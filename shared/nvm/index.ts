@@ -11,5 +11,4 @@ export * from "./memoryImage";
 export * from "./model";
 export * from "./profile";
 export * from "./struct";
-export * from "./vendor";
 

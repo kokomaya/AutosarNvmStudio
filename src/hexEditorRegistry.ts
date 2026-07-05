@@ -66,6 +66,17 @@ export class HexEditorRegistry extends Disposable {
 		return this.docs.get(document) || EMPTY;
 	}
 
+	/** Gets messaging for whichever open document matches the given URI. */
+	public getMessagingByUri(uri: vscode.Uri): Iterable<ExtensionHostMessageHandler> {
+		const target = uri.toString();
+		for (const [doc, set] of this.docs) {
+			if (doc.uri.toString() === target) {
+				return set;
+			}
+		}
+		return EMPTY;
+	}
+
 	/** Registers an opened hex document. */
 	public add(document: HexDocument, messaging: ExtensionHostMessageHandler) {
 		let collection = this.docs.get(document);

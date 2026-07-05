@@ -15,15 +15,17 @@
 // Save the file while a dump is open and the editor hot-reloads your changes.
 
 module.exports.createEngine = sdk => {
-	// `sdk` is the injected, versioned NVM kernel. Available helpers include:
+	// `sdk` is the injected, VENDOR-NEUTRAL kernel (no vendor logic lives in the
+	// editor). Available generic helpers:
 	//   sdk.version            - SDK contract version (guard on this if needed)
-	//   sdk.loadHexImage(text) - decode S-record / Intel HEX -> MemoryImage
-	//   sdk.parseVectorFeeV3   - Vector FEE V3 link-table walk
-	//   sdk.parseFeeLcfg / sdk.feeLcfgByTag - Fee_Lcfg.c helpers
-	//   sdk.computeCrc         - Rocksoft CRC (all presets)
+	//   sdk.loadHexImage(text) - decode S-record / Intel HEX -> image
+	//   sdk.parseSRecord / sdk.parseIntelHex - specific decoders
+	//   sdk.computeCrc / sdk.resolveCrcPreset - Rocksoft CRC (all presets)
 	//   sdk.evaluateExpression - safe arithmetic evaluator (no eval)
-	//   sdk.resolveFieldLink   - decode + range-check an in-file address
-	//   sdk.buildFeeV3Blocks   - the full built-in Vector pipeline
+	//   sdk.resolveFieldLink / sdk.decodeLinkValue - in-file address helpers
+	//   sdk.parseBlkStruct / sdk.decodeStruct / sdk.structByteLength - struct decode
+	//   sdk.parseXml / sdk.parseEcucModule - generic AUTOSAR config
+	// All vendor/layout logic is YOUR engine's job — build it on these primitives.
 
 	return {
 		id: "my-engine",

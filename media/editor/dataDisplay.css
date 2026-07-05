@@ -155,4 +155,40 @@
 	display: flex;
 	gap: 6px;
 	justify-content: flex-end;
+	flex-wrap: wrap;
 }
+
+/* A note's body preview inside its hover popover. */
+.nvmNoteBody {
+	font-size: 0.85em;
+	white-space: pre-wrap;
+	max-width: 320px;
+	max-height: 160px;
+	overflow: auto;
+	color: var(--vscode-editor-foreground);
+}
+
+/* Non-intrusive tag marker in the top-left corner of a tagged cell. */
+.nvmTagBadge {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 0;
+	height: 0;
+	border-top: 5px solid var(--vscode-charts-orange);
+	border-right: 5px solid transparent;
+	pointer-events: none;
+}
+
+/* Small dot in the top-right corner of a noted cell. */
+.nvmNoteDot {
+	position: absolute;
+	top: 1px;
+	right: 1px;
+	width: 4px;
+	height: 4px;
+	border-radius: 50%;
+	background: var(--vscode-charts-blue);
+	pointer-events: none;
+}
+

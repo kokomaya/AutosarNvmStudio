@@ -36,3 +36,106 @@
 .nvmInspector dl {
 	margin: 0 0 0.5rem 0;
 }
+
+.nvmTagSection {
+	padding: 0.5rem;
+	border-top: 1px solid var(--vscode-panel-border);
+}
+
+.nvmTagSection h4 {
+	margin: 0 0 0.35rem 0;
+	font-size: 0.9em;
+	text-transform: uppercase;
+	opacity: 0.8;
+}
+
+.nvmTagChips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	margin-bottom: 0.4rem;
+}
+
+.nvmTagChip {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 1px 6px;
+	border-radius: 10px;
+	font-size: 0.85em;
+	color: #1f1f1f;
+	border: 1px solid rgba(0, 0, 0, 0.15);
+}
+
+.nvmTagChip button {
+	background: transparent;
+	border: none;
+	cursor: pointer;
+	color: inherit;
+	padding: 0;
+	line-height: 1;
+	font-weight: 700;
+}
+
+.nvmTagRow {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin-bottom: 4px;
+}
+
+.nvmTagRow input[type="text"] {
+	flex: 1;
+	min-width: 0;
+	background: var(--vscode-input-background);
+	color: var(--vscode-input-foreground);
+	border: 1px solid var(--vscode-input-border, transparent);
+	padding: 2px 4px;
+}
+
+.nvmTagRow input[type="color"] {
+	width: 22px;
+	height: 22px;
+	padding: 0;
+	border: none;
+	background: transparent;
+	cursor: pointer;
+}
+
+.nvmTagManage {
+	margin-top: 0.4rem;
+}
+
+.nvmTagManage summary {
+	cursor: pointer;
+	opacity: 0.8;
+	font-size: 0.85em;
+}
+
+.nvmTagAssign {
+	display: flex;
+	gap: 6px;
+	align-items: center;
+	margin-bottom: 0.4rem;
+}
+
+.nvmTagAssign select,
+.nvmTagAssign input {
+	background: var(--vscode-input-background);
+	color: var(--vscode-input-foreground);
+	border: 1px solid var(--vscode-input-border, transparent);
+	padding: 2px 4px;
+}
+
+.nvmTagSection button.vsBtn {
+	background: var(--vscode-button-background);
+	color: var(--vscode-button-foreground);
+	border: none;
+	padding: 2px 8px;
+	cursor: pointer;
+}
+
+.nvmTagSection button.vsBtn:hover {
+	background: var(--vscode-button-hoverBackground);
+}
+
