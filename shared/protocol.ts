@@ -120,6 +120,42 @@ export interface NvmFieldInfo {
 	link?: { targetOffset: number; label?: string };
 }
 
+/**
+ * A vendor-neutral display attribute for a block (one "column" in the Blocks
+ * views). Engines/adapters emit these; the plugin renders them generically and
+ * never interprets vendor-specific keys.
+ */
+export interface NvmAttribute {
+	/** Stable, discoverable key (used for column selection), e.g. "sector". */
+	key: string;
+	/** Human-readable column label, e.g. "Sector". */
+	label: string;
+	value: string | number | boolean;
+	/** Optional semantic hint for icon/formatting; purely presentational. */
+	kind?: string;
+}
+
+/** A vendor-neutral grouping bucket a block belongs to (e.g. a sector). */
+export interface NvmGroupRef {
+	/** Stable group key, e.g. "sector0". */
+	key: string;
+	/** Display label, e.g. "Sector 0". */
+	label: string;
+	/** Optional sort order among groups (ascending). */
+	order?: number;
+}
+
+/**
+ * The logical identity a block shares with its other versions/copies. Used by
+ * the "group by block id" arrangement to gather instances of the same block.
+ */
+export interface NvmIdentityRef {
+	/** Stable identity key shared by all instances, e.g. "tag:0x0031". */
+	key: string;
+	/** Display label for the identity, e.g. the block name. */
+	label: string;
+}
+
 export interface NvmBlockInfo {
 	id: string;
 	name?: string;
@@ -128,6 +164,24 @@ export interface NvmBlockInfo {
 	raw?: any;
 	/** Sub-ranges (attributes) that should be colored individually. */
 	fields?: NvmFieldInfo[];
+	/**
+	 * The following fields are all OPTIONAL and vendor-neutral. Engines populate
+	 * them from their own (vendor-specific) metadata; the plugin's Blocks views
+	 * consume only these generic shapes and never read `raw`.
+	 */
+	/** Grouping bucket for the "group by sector" arrangement. */
+	group?: NvmGroupRef;
+	/**
+	 * Best-effort write-order hint (higher = written later). May be undefined
+	 * when the order is not derivable; such blocks are shown as "unknown order".
+	 */
+	sequence?: number;
+	/** Logical identity shared with this block's other versions/copies. */
+	identity?: NvmIdentityRef;
+	/** True when this is the newest instance of its {@link identity}. */
+	isLatest?: boolean;
+	/** Vendor-neutral display attributes (the configurable columns). */
+	attributes?: NvmAttribute[];
 }
 
 export interface SetNvmBlocksMessage {

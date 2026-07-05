@@ -29,6 +29,14 @@ export interface NvmField {
 	link?: { targetOffset: number; label?: string };
 }
 
+/** A vendor-neutral display attribute (one "column" in the editor's Blocks views). */
+export interface NvmAttribute {
+	key: string;
+	label: string;
+	value: string | number | boolean;
+	kind?: string;
+}
+
 /** One NVM block returned to the editor. */
 export interface NvmBlock {
 	id: string;
@@ -37,6 +45,16 @@ export interface NvmBlock {
 	length: number;
 	raw?: unknown;
 	fields?: NvmField[];
+	/** Grouping bucket (e.g. a sector) for the editor's "group by sector" view. */
+	group?: { key: string; label: string; order?: number };
+	/** Best-effort write-order hint (higher = later); omit when not derivable. */
+	sequence?: number;
+	/** Logical identity shared with this block's other versions/copies. */
+	identity?: { key: string; label: string };
+	/** True when this is the newest instance of its {@link identity}. */
+	isLatest?: boolean;
+	/** Vendor-neutral display attributes (the editor's configurable columns). */
+	attributes?: NvmAttribute[];
 }
 
 /** The generic bundle the editor gathers and hands to `parse`. */

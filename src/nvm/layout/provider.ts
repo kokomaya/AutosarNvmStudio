@@ -12,13 +12,26 @@
  * (see `configLayout.ts`), so new vendors can be added without touching core.
  */
 
-import { FieldLinkSpec } from "../../../shared/nvm";
+import { FieldLinkSpec, NvmProfile, SymbolTable } from "../../../shared/nvm";
 import { NvmBlockInfo } from "../../../shared/protocol";
+import { FileRef, ResolveContext } from "./context";
 
 /** A vendor layout descriptor, typically loaded from a `*.nvmlayout.json`. */
 export interface LayoutConfig {
 	/** Human-readable vendor / format name. */
 	vendor: string;
+	/**
+	 * Explicit capability tier this descriptor uses. Optional — inferred when
+	 * omitted:
+	 * - `engineScript`/`engine` present  => `"engine"`   (T2, arbitrary code),
+	 * - `profile` present                => `"structured"` (T1, declarative parser),
+	 * - otherwise                        => `"positional"` (T0, static `blocks`).
+	 *
+	 * Set it to document intent, or to disambiguate a descriptor that happens to
+	 * carry more than one section. This is the single "escalating power" knob:
+	 * T0 static → T1 header/length/CRC/iteration → T2 full engine.
+	 */
+	strategy?: "positional" | "structured" | "engine";
 	/**
 	 * Selects a built-in code provider to run with `options` instead of using the
 	 * config's own `blocks`. E.g. `"vector-fee-v3"` to tune the Vector parser.
@@ -53,6 +66,14 @@ export interface LayoutConfig {
 	arrangement?: "sequential" | "dualEnded";
 	/** Explicit block layout (required unless a built-in `provider` is selected). */
 	blocks?: LayoutBlockDef[];
+	/**
+	 * T1 structured parser spec: describe a header + payload-length + optional
+	 * CRC + iteration strategy, and the core walks the image itself — no `blocks`
+	 * table, no engine code. Uses the vendor-neutral {@link NvmProfile} model
+	 * (header fields, roles, whitelisted transform expressions, CRC presets,
+	 * sequential / fixed-count iteration, end markers). See shared/nvm/profile.ts.
+	 */
+	profile?: NvmProfile;
 	/**
 	 * Auxiliary source/config files this descriptor's adapter needs, as
 	 * `logicalName -> fileName`. The core resolves each file (searching the dump
@@ -96,8 +117,10 @@ export interface LayoutFieldDef {
 }
 
 /**
- * The generic input bundle handed to every adapter. The core gathers these
- * uniformly — it has no vendor knowledge; adapters pick what they need.
+ * LEGACY input bundle for the **external-engine boundary only**. Engine packs
+ * (see `engines/`) declare a matching shape and consume `text` + `sources`, so
+ * this stays stable for backward compatibility. Built-in providers use the
+ * vendor-blind {@link ResolveContext} instead.
  */
 export interface LayoutInput {
 	/** Lower-cased base file name (e.g. `nvm_test.mot`). */
@@ -122,29 +145,68 @@ export interface NvmLayoutProvider {
 	id: string;
 	/** Human-readable label. */
 	label: string;
-	/** Cheap check whether this provider might handle the input. */
-	detect(input: LayoutInput): boolean;
+	/** Cheap check whether this provider might handle the context. */
+	detect(ctx: ResolveContext): boolean;
 	/** Produce blocks; return an empty array when it turns out not to apply. */
-	parse(input: LayoutInput): NvmBlockInfo[];
+	parse(ctx: ResolveContext): NvmBlockInfo[];
 }
 
-/** Whether a descriptor's `match` gate applies to the given input. */
-export function matchesConfig(config: LayoutConfig, input: LayoutInput): boolean {
+/**
+ * Resolve the capability tier a descriptor uses. Explicit `strategy` wins;
+ * otherwise it is inferred from which section is present so existing
+ * descriptors keep working without the field.
+ */
+export function effectiveStrategy(config: LayoutConfig): "positional" | "structured" | "engine" {
+	if (config.strategy) {
+		return config.strategy;
+	}
+	if (config.engineScript || config.engine) {
+		return "engine";
+	}
+	if (config.profile) {
+		return "structured";
+	}
+	return "positional";
+}
+
+/** Whether a descriptor's `match` gate applies to the given file. */
+export function matchesConfig(config: LayoutConfig, target: FileRef): boolean {
 	const m = config.match;
 	if (!m) {
 		return true;
 	}
 	// Empty arrays are treated as "no constraint" (common placeholder value).
-	if (m.ext?.length && !m.ext.map(e => e.toLowerCase()).includes(input.ext)) {
+	if (m.ext?.length && !m.ext.map(e => e.toLowerCase()).includes(target.ext)) {
 		return false;
 	}
 	if (
 		m.fileNameIncludes?.length &&
-		!m.fileNameIncludes.some(s => input.fileName.includes(s.toLowerCase()))
+		!m.fileNameIncludes.some(s => target.fileName.includes(s.toLowerCase()))
 	) {
 		return false;
 	}
 	return true;
+}
+
+/**
+ * Fill in each block's `name` from a resolved {@link SymbolTable} when the
+ * block's numeric logical id matches a symbol. Vendor-blind business naming:
+ * a no-op unless a `symbols` adapter contributed a matching entry.
+ */
+export function applySymbolNames(blocks: NvmBlockInfo[], symbols: SymbolTable | undefined): void {
+	if (!symbols || symbols.byId.size === 0) {
+		return;
+	}
+	for (const block of blocks) {
+		const id = (block.raw as { logicalId?: number | string } | undefined)?.logicalId;
+		if (id === undefined) {
+			continue;
+		}
+		const symbol = symbols.byId.get(id);
+		if (symbol?.name) {
+			block.name = symbol.name;
+		}
+	}
 }
 
 /**
@@ -183,18 +245,20 @@ export interface ResolvedLayout {
 }
 
 /**
- * Run the registered providers against the input and return the first that
+ * Run the registered providers against the context and return the first that
  * yields at least one block. Providers are isolated: a throwing provider is
- * skipped rather than aborting the whole resolution.
+ * skipped rather than aborting the whole resolution. Resolved blocks are then
+ * enriched with business names from the `symbols` capability, when available.
  */
-export function resolveNvmBlocks(input: LayoutInput): ResolvedLayout | undefined {
+export function resolveNvmBlocks(ctx: ResolveContext): ResolvedLayout | undefined {
 	for (const provider of providers) {
 		try {
-			if (!provider.detect(input)) {
+			if (!provider.detect(ctx)) {
 				continue;
 			}
-			const blocks = provider.parse(input);
+			const blocks = provider.parse(ctx);
 			if (blocks.length > 0) {
+				applySymbolNames(blocks, ctx.symbols());
 				return { providerId: provider.id, blocks };
 			}
 		} catch {

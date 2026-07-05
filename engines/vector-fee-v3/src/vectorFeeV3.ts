@@ -14,8 +14,11 @@
  *   link table   : starts at relSectorStart + al, `ltSize` slots of `al` bytes:
  *                    linkTarget(4) payloadSize(2) pad(al-6)
  *                  a slot of 0xFFFFFFFF is an unused block index.
- *   chunk        : located by working backwards from `linkTarget`:
- *                    ... [header: tag(2) _(2) size(4)] [pad] 0x0A <payload> 0x0A [link]
+ *   chunk        : located by working backwards from `linkTarget` (which points
+ *                  at the chunk TAIL / next-link field):
+ *                    [header: tag(2) datasetIdx(1) mgmtType(1) pld(2) aln(2)]
+ *                    [FF pad] 0x0A <payload = pld: data + optional MAC/CRC + pad>
+ *                    [8B chunk trailer] [8B next-chunk link]
  */
 
 import { HexImage } from "./types";
@@ -33,6 +36,10 @@ export interface FeeV3Chunk {
 	tag: number;
 	slotIndex: number;
 	bank: number;
+	/** Dataset / instance index from the chunk header (byte 2). */
+	datasetIndex: number;
+	/** Management-type byte from the chunk header (byte 3): 0x01 NATIVE, 0x10 DATASET, … */
+	mgmtType: number;
 	headerAddress: number;
 	payloadAddress: number;
 	linkTargetAddress: number;
@@ -191,19 +198,21 @@ function decodeChunk(
 		return undefined;
 	}
 
-	// FeeBlockV3.Parse
+	// FeeBlockV3.Parse — header page: tag(2 LE) datasetIdx(1) mgmtType(1) pld(2 LE) aln(2)
 	let idx = la;
 	const tag = readU16LE(bytes, idx);
 	if (tag === 0xffff) {
 		return undefined;
 	}
+	const datasetIndex = bytes[idx + 2];
+	const mgmtType = bytes[idx + 3];
 	idx += 2;
-	idx += 2; // reserved / instance nibble
-	const size = readU32LE(bytes, idx);
-	if (size === 0xffff) {
+	idx += 2; // datasetIdx + mgmtType
+	const headerSize = readU16LE(bytes, idx); // pld (aln bytes follow, usually 0)
+	if (headerSize === 0xffff) {
 		return undefined;
 	}
-	idx += 4;
+	idx += 4; // pld(2) + aln(2)
 
 	const rst = idx % al;
 	idx += al - rst;
@@ -213,6 +222,9 @@ function decodeChunk(
 	}
 	idx += 1; // consume marker
 	const payloadStart = idx;
+	// The link-table payloadSize is the authoritative full stored size (business
+	// data + optional MAC/CRC + padding); the header `pld` mirrors it.
+	const size = pldSz;
 	const end = Math.min(payloadStart + size, bytes.length);
 	const data = bytes.subarray(payloadStart, end);
 
@@ -220,6 +232,8 @@ function decodeChunk(
 		tag,
 		slotIndex: slot,
 		bank,
+		datasetIndex,
+		mgmtType,
 		headerAddress: baseAddress + la,
 		payloadAddress: baseAddress + payloadStart,
 		linkTargetAddress: baseAddress + toFlat(linkTarget),

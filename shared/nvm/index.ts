@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 export * from "./arxml";
+export * from "./capabilities";
 export * from "./crc";
 export * from "./engine";
 export * from "./expr";

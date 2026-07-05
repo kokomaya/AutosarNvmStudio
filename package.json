@@ -205,9 +205,28 @@
         "title": "Jump to Annotation"
       },
       {
+        "command": "hexEditor.nvm.blocks.setArrangement",
+        "category": "NVM",
+        "title": "Arrange Blocks…",
+        "icon": "$(list-tree)"
+      },
+      {
+        "command": "hexEditor.nvm.blocks.configureColumns",
+        "category": "NVM",
+        "title": "Choose Block Columns…",
+        "icon": "$(settings-gear)"
+      },
+      {
+        "command": "hexEditor.nvm.blocks.refresh",
+        "category": "NVM",
+        "title": "Refresh Blocks",
+        "icon": "$(refresh)"
+      },
+      {
         "command": "hexEditor.nvm.openNoteNode",
         "category": "NVM",
-        "title": "Open Note"
+        "title": "Open Note",
+        "icon": "$(go-to-file)"
       },
       {
         "command": "hexEditor.nvm.deleteAnnotation",
@@ -286,6 +305,10 @@
         }
       ],
       "nvmStudio": [
+        {
+          "id": "hexEditor.nvmBlocks",
+          "name": "Blocks"
+        },
         {
           "id": "hexEditor.nvmStudio",
           "name": "Annotations"
@@ -403,6 +426,21 @@
       ],
       "view/title": [
         {
+          "command": "hexEditor.nvm.blocks.setArrangement",
+          "when": "view == hexEditor.nvmBlocks",
+          "group": "navigation@1"
+        },
+        {
+          "command": "hexEditor.nvm.blocks.configureColumns",
+          "when": "view == hexEditor.nvmBlocks",
+          "group": "navigation@2"
+        },
+        {
+          "command": "hexEditor.nvm.blocks.refresh",
+          "when": "view == hexEditor.nvmBlocks",
+          "group": "navigation@3"
+        },
+        {
           "command": "hexEditor.nvm.openReportPreview",
           "when": "view == hexEditor.nvmStudio",
           "group": "navigation@1"
@@ -415,9 +453,14 @@
       ],
       "view/item/context": [
         {
+          "command": "hexEditor.nvm.openNoteNode",
+          "when": "view == hexEditor.nvmStudio && viewItem == note",
+          "group": "inline@1"
+        },
+        {
           "command": "hexEditor.nvm.deleteAnnotation",
           "when": "view == hexEditor.nvmStudio && viewItem =~ /bookmark|note|tagAssignment/",
-          "group": "inline"
+          "group": "inline@2"
         },
         {
           "command": "hexEditor.nvm.openNoteNode",

@@ -8,13 +8,19 @@
  * supported purely by configuration — no code and no core changes.
  */
 
-import { loadHexImage, resolveFieldLink } from "../../../shared/nvm";
+import { resolveFieldLink } from "../../../shared/nvm";
 import { NvmBlockInfo, NvmFieldInfo } from "../../../shared/protocol";
-import { applyPalette, LayoutBlockDef, LayoutConfig, LayoutInput, matchesConfig, NvmLayoutProvider } from "./provider";
+import { ResolveContext } from "./context";
+import { applyPalette, effectiveStrategy, LayoutBlockDef, LayoutConfig, matchesConfig, NvmLayoutProvider } from "./provider";
 
 /** True when the descriptor defines its own explicit `blocks` (not a built-in provider). */
-function isBlockConfig(config: LayoutConfig, input: LayoutInput): boolean {
-	return !config.provider && !!config.blocks?.length && matchesConfig(config, input);
+function isBlockConfig(config: LayoutConfig, ctx: ResolveContext): boolean {
+	return (
+		!config.provider &&
+		!!config.blocks?.length &&
+		effectiveStrategy(config) === "positional" &&
+		matchesConfig(config, ctx)
+	);
 }
 
 function blocksFromConfig(
@@ -84,15 +90,14 @@ function blocksFromConfig(
 export const configLayoutProvider: NvmLayoutProvider = {
 	id: "config-layout",
 	label: "Config-driven layout (*.nvmlayout.json)",
-	detect(input: LayoutInput): boolean {
-		return input.configs.some(c => isBlockConfig(c, input));
+	detect(ctx: ResolveContext): boolean {
+		return ctx.configs.some(c => isBlockConfig(c, ctx));
 	},
-	parse(input: LayoutInput): NvmBlockInfo[] {
-		const image = loadHexImage(input.text);
-		const { baseAddress, bytes } = image.toFlat(0xff);
+	parse(ctx: ResolveContext): NvmBlockInfo[] {
+		const { baseAddress, bytes } = ctx.image;
 		const out: NvmBlockInfo[] = [];
-		for (const config of input.configs) {
-			if (isBlockConfig(config, input)) {
+		for (const config of ctx.configs) {
+			if (isBlockConfig(config, ctx)) {
 				const blocks = blocksFromConfig(config, baseAddress, bytes);
 				applyPalette(blocks, config.palette);
 				out.push(...blocks);

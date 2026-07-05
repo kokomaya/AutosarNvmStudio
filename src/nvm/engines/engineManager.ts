@@ -62,11 +62,17 @@ function safeId(id: string): string {
 }
 
 export class EngineManager {
-	/** Root folder for installed packs: `<globalStorage>/engines`. */
+	/** Root folder for user-installed / downloaded packs: `<globalStorage>/engines`. */
 	private readonly root: vscode.Uri;
+	/** Read-only packs shipped with the extension: `<extension>/dist/engines`. */
+	private readonly bundledRoot: vscode.Uri;
+	/** Only resolve bundled packs in the F5 dev host, never in a shipped build. */
+	private readonly allowBundled: boolean;
 
 	constructor(private readonly context: vscode.ExtensionContext) {
 		this.root = vscode.Uri.joinPath(context.globalStorageUri, "engines");
+		this.bundledRoot = vscode.Uri.joinPath(context.extensionUri, "dist", "engines");
+		this.allowBundled = context.extensionMode === vscode.ExtensionMode.Development;
 	}
 
 	private async ensureRoot(): Promise<void> {
@@ -95,16 +101,53 @@ export class EngineManager {
 		return out;
 	}
 
-	/** Resolve an installed pack by id (an optional `@version` suffix is ignored). */
+	/** Resolve a pack by id (an optional `@version` suffix is ignored). */
 	public async resolve(ref: string): Promise<InstalledEngine | undefined> {
 		const id = ref.split("@")[0].trim();
+		// 1. A user-installed / downloaded pack in global storage wins (lets a user
+		//    override a bundled engine by installing their own with the same id).
 		const dir = vscode.Uri.joinPath(this.root, safeId(id));
 		const direct = await this.readPack(dir);
 		if (direct?.manifest.id === id) {
 			return direct;
 		}
-		// Fall back to a full scan in case the folder name differs from the id.
-		return (await this.list()).find(e => e.manifest.id === id);
+		const scanned = (await this.list()).find(e => e.manifest.id === id);
+		if (scanned) {
+			return scanned;
+		}
+		// 2. DEBUG ONLY: fall back to a pack the extension ships under
+		//    `dist/engines/*`, loaded in place — `npm run compile` writes it there,
+		//    so there is nothing to install: rebuild + reload the window and the new
+		//    code is picked up. Disabled in shipped builds, where production must use
+		//    a real global install or a project-local `engineScript`.
+		if (!this.allowBundled) {
+			return undefined;
+		}
+		return this.resolveBundled(id);
+	}
+
+	/** Find a bundled pack (`<extension>/dist/engines/*`) by id, read in place. */
+	private async resolveBundled(id: string): Promise<InstalledEngine | undefined> {
+		const guess = await this.readPack(vscode.Uri.joinPath(this.bundledRoot, safeId(id)));
+		if (guess?.manifest.id === id) {
+			return guess;
+		}
+		let entries: [string, vscode.FileType][];
+		try {
+			entries = await vscode.workspace.fs.readDirectory(this.bundledRoot);
+		} catch {
+			return undefined;
+		}
+		for (const [name, type] of entries) {
+			if (type !== vscode.FileType.Directory) {
+				continue;
+			}
+			const pack = await this.readPack(vscode.Uri.joinPath(this.bundledRoot, name));
+			if (pack?.manifest.id === id) {
+				return pack;
+			}
+		}
+		return undefined;
 	}
 
 	/** Read + validate a pack folder's manifest and entry. */

@@ -14,8 +14,31 @@ import { feeLcfgByTag, parseFeeLcfg } from "./feeLcfg";
 import { EngineSdk, NvmBlock, NvmField } from "./types";
 import { FeeV3Chunk, parseVectorFeeV3 } from "./vectorFeeV3";
 
-/** Size of the FEE V3 chunk header: tag(2) reserved(2) size(4). */
+/** Size of the FEE V3 chunk header: tag(2) datasetIdx(1) mgmtType(1) pld(2) aln(2). */
 const CHUNK_HEADER_SIZE = 8;
+
+/**
+ * Stride used to fold (sector, slot) into a single best-effort write sequence.
+ * Larger than any realistic link-table slot count so sectors never interleave.
+ */
+const SECTOR_SEQ_STRIDE = 1_000_000;
+
+/** Human-readable name for a chunk management-type byte. */
+function mgmtLabel(mgmtType: number): string {
+	switch (mgmtType) {
+		case 0x01:
+			return "NATIVE";
+		case 0x10:
+			return "DATASET";
+		default:
+			return `0x${mgmtType.toString(16).toUpperCase().padStart(2, "0")}`;
+	}
+}
+
+/** Two-digit upper-case hex for a small unsigned value. */
+function hex(value: number, pad = 2): string {
+	return `0x${value.toString(16).toUpperCase().padStart(pad, "0")}`;
+}
 
 /** One byte-range attribute of a region, relative to the region start. */
 export interface FeeV3FieldTemplate {
@@ -36,6 +59,12 @@ export interface FeeV3StructureTemplate {
 	chunkHeader?: FeeV3FieldTemplate[];
 	marker?: { name: string; kind: string; color?: string };
 	payload?: { name: string; kind: string; color?: string };
+	/** Stored bytes after the NvM payload up to the aligned size (MAC/CRC + padding). */
+	payloadExtra?: { name: string; kind: string; color?: string };
+	/** Fixed 8-byte trailer written by Fee_InternalFillInstanceBufferTrailerPage. */
+	chunkTrailer?: { name: string; kind: string; color?: string };
+	/** The next-chunk link at the tail; the link-table slot points here. */
+	nextLink?: { name: string; kind: string; color?: string };
 }
 
 /** The default field structure (used when the descriptor omits a part). */
@@ -52,12 +81,17 @@ export const DEFAULT_FEE_V3_STRUCTURE: Required<FeeV3StructureTemplate> = {
 	],
 	slotEmpty: [{ name: "unused slot", kind: "linkEmpty", offset: 0, length: 8 }],
 	chunkHeader: [
-		{ name: "tag", kind: "tag", offset: 0, length: 2 },
-		{ name: "reserved", kind: "reserved", offset: 2, length: 2 },
-		{ name: "size", kind: "size", offset: 4, length: 4 },
+		{ name: "block tag", kind: "tag", offset: 0, length: 2 },
+		{ name: "dataset idx", kind: "datasetIdx", offset: 2, length: 1 },
+		{ name: "mgmt type", kind: "mgmtType", offset: 3, length: 1 },
+		{ name: "payload length", kind: "payloadLen", offset: 4, length: 2 },
+		{ name: "align", kind: "align", offset: 6, length: 2 },
 	],
-	marker: { name: "Padding / marker", kind: "marker" },
+	marker: { name: "Padding / start marker", kind: "marker" },
 	payload: { name: "Payload", kind: "payload" },
+	payloadExtra: { name: "MAC / CRC / padding", kind: "mac" },
+	chunkTrailer: { name: "chunk trailer", kind: "chunkTrailer" },
+	nextLink: { name: "next chunk link", kind: "nextLink" },
 };
 
 /** Tunable Vector FEE V3 container parameters (from a `*.nvmlayout.json`). */
@@ -85,6 +119,16 @@ function applyTemplate(
 		unit,
 		link: t.link && link ? { targetOffset: link.targetOffset, label: t.link.label ?? link.label } : undefined,
 	}));
+}
+
+/** Build a single colored region (name + kind) at an absolute editor offset. */
+function regionField(
+	region: { name: string; kind: string; color?: string },
+	offset: number,
+	length: number,
+	unit: string,
+): NvmField {
+	return { name: region.name, kind: region.kind, offset, length, color: region.color, unit };
 }
 
 /**
@@ -177,6 +221,14 @@ export function buildFeeV3Blocks(
 				usedSlots: section.usedSlots,
 				chunks: section.chunks.length,
 			},
+			group: { key: `sector${section.bank}`, label: `Sector ${section.bank}`, order: section.bank },
+			attributes: [
+				{ key: "kind", label: "Kind", value: "sector table", kind: "kind" },
+				{ key: "sector", label: "Sector", value: section.bank, kind: "sector" },
+				{ key: "usedSlots", label: "Used slots", value: section.usedSlots },
+				{ key: "ltSize", label: "Slots", value: section.ltSize },
+				{ key: "chunks", label: "Chunks", value: section.chunks.length },
+			],
 			fields,
 		});
 	}
@@ -184,7 +236,9 @@ export function buildFeeV3Blocks(
 	// 2) Data blocks: one per chunk.
 	for (const c of result.chunks) {
 		const def = byTag?.get(c.tag);
-		const netLength = def?.payloadLength ?? c.size;
+		const rawSize = c.size; // full stored payload (link-table payloadSize)
+		// NvM business length from Fee_Lcfg; clamp so extra >= 0 even if config drifts.
+		const netLength = Math.min(def?.payloadLength ?? rawSize, rawSize);
 
 		const headerOffset = c.headerAddress - base;
 		const payloadOffset = c.payloadAddress - base;
@@ -194,29 +248,34 @@ export function buildFeeV3Blocks(
 
 		const markerOffset = headerOffset + CHUNK_HEADER_SIZE;
 		const markerLength = payloadOffset - markerOffset;
-		const blockLength = payloadOffset + netLength - headerOffset;
+
+		// The link-table slot points at the chunk TAIL (the next-chunk link field).
+		// Between the stored payload and that link sits the fixed chunk trailer.
+		const extraLength = Math.max(0, rawSize - netLength); // MAC/CRC + padding
+		const trailerStart = payloadOffset + rawSize;
+		const nextLinkOffset = c.linkTargetAddress - base;
+		const nextLinkLength = 8;
+		const hasTail = nextLinkOffset >= trailerStart;
+		const trailerLength = hasTail ? nextLinkOffset - trailerStart : 0;
+		const blockEnd = hasTail ? nextLinkOffset + nextLinkLength : payloadOffset + netLength;
+		const blockLength = blockEnd - headerOffset;
 
 		const blockUnit = `tag${c.tag}`;
 		const fields: NvmField[] = applyTemplate(struct.chunkHeader, headerOffset, blockUnit);
 		if (markerLength > 0) {
-			fields.push({
-				name: struct.marker.name,
-				kind: struct.marker.kind,
-				offset: markerOffset,
-				length: markerLength,
-				color: struct.marker.color,
-				unit: blockUnit,
-			});
+			fields.push(regionField(struct.marker, markerOffset, markerLength, blockUnit));
 		}
 		if (netLength > 0) {
-			fields.push({
-				name: struct.payload.name,
-				kind: struct.payload.kind,
-				offset: payloadOffset,
-				length: netLength,
-				color: struct.payload.color,
-				unit: blockUnit,
-			});
+			fields.push(regionField(struct.payload, payloadOffset, netLength, blockUnit));
+		}
+		if (extraLength > 0) {
+			fields.push(regionField(struct.payloadExtra, payloadOffset + netLength, extraLength, blockUnit));
+		}
+		if (trailerLength > 0) {
+			fields.push(regionField(struct.chunkTrailer, trailerStart, trailerLength, blockUnit));
+		}
+		if (hasTail) {
+			fields.push(regionField(struct.nextLink, nextLinkOffset, nextLinkLength, blockUnit));
 		}
 
 		blocks.push({
@@ -229,11 +288,43 @@ export function buildFeeV3Blocks(
 				bank: c.bank,
 				slotIndex: c.slotIndex,
 				consistent: c.consistent,
+				datasetIndex: c.datasetIndex,
+				mgmtType: c.mgmtType,
 				netLength,
-				rawSize: c.size,
+				rawSize,
 			},
+			// Vendor-neutral projection for the editor's Blocks views. `sequence`
+			// is BEST-EFFORT: FEE stores no monotonic write counter, so we order by
+			// sector then link-table slot (higher slot = written later in a sector).
+			group: { key: `sector${c.bank}`, label: `Sector ${c.bank}`, order: c.bank },
+			sequence: c.bank * SECTOR_SEQ_STRIDE + c.slotIndex,
+			identity: { key: `tag:0x${c.tag.toString(16)}`, label: def?.name ?? `Tag ${c.tag}` },
+			attributes: [
+				{ key: "id", label: "ID", value: hex(c.tag, 4), kind: "id" },
+				{ key: "sector", label: "Sector", value: c.bank, kind: "sector" },
+				{ key: "slot", label: "Slot", value: c.slotIndex },
+				{ key: "mgmt", label: "Mgmt", value: mgmtLabel(c.mgmtType), kind: "mgmt" },
+				{ key: "dataset", label: "Dataset", value: c.datasetIndex },
+				{ key: "size", label: "Size", value: rawSize },
+				{ key: "payload", label: "Payload", value: netLength },
+			],
 			fields,
 		});
+	}
+
+	// Flag the newest instance of each logical block (highest write sequence).
+	const latestByIdentity = new Map<string, NvmBlock>();
+	for (const b of blocks) {
+		if (!b.identity || typeof b.sequence !== "number") {
+			continue;
+		}
+		const best = latestByIdentity.get(b.identity.key);
+		if (!best || (best.sequence ?? -Infinity) < b.sequence) {
+			latestByIdentity.set(b.identity.key, b);
+		}
+	}
+	for (const b of latestByIdentity.values()) {
+		b.isLatest = true;
 	}
 
 	blocks.sort((a, b) => a.offset - b.offset);

@@ -15,6 +15,17 @@
 //
 // IMPORTANT: rendering is fully config-driven. With no matching descriptor,
 // nothing is coloured — the file looks like the plain hex editor.
+//
+// THREE TIERS OF POWER (pick the lowest one that fits; escalate only if needed):
+//   T0 "positional"  — static `blocks` with fixed offsets/lengths.      (Example B)
+//   T1 "structured"  — a `profile`: header + payload-length + CRC +      (Example C)
+//                      iteration. The core walks the image itself; NO
+//                      code and NO hand-listed blocks.
+//   T2 "engine"      — `engineScript`/`engine`: arbitrary JS for         (Example A)
+//                      algorithmic formats (log-structured / GC / link
+//                      resolution) that a schema cannot express.
+// The optional "strategy" key names the tier explicitly; when omitted it is
+// inferred (engine* => engine, profile => structured, else positional).
 // ============================================================================
 
 // ----------------------------------------------------------------------------
@@ -101,6 +112,44 @@
       ]
     }
   ]
+}
+
+// ----------------------------------------------------------------------------
+// EXAMPLE C — T1 STRUCTURED. Describe a header + payload length + CRC + how to
+// iterate, and the core walks the image itself — no `blocks` table, no engine.
+// Use this for log-linear / sequential / fixed-count formats whose block size
+// is a header field. `strategy` is optional (a "profile" implies structured).
+// ----------------------------------------------------------------------------
+{
+  "vendor": "Acme FEE (structured)",
+  "strategy": "structured",                 // optional; inferred from "profile"
+  "match": { "ext": [".bin", ".mot"] },
+  "palette": { "payloadLength": "hsl(25 85% 78%)", "crc": "hsl(0 75% 80%)" },
+  "profile": {                              // the vendor-neutral NvmProfile model
+    "id": "acme.fee.v1",                    // REQUIRED stable id
+    "endian": "little",                     // default byte order (little|big)
+    "block": {
+      "iterate": "sequential",              // "sequential" | "fixed-count"
+      "start": 0,                           // first byte offset to parse
+      "align": 8,                           // round each block's total size up
+      "header": [                           // fields are RELATIVE to block start
+        { "name": "id",   "offset": 0, "size": 2, "role": "blockId" },
+        { "name": "len",  "offset": 2, "size": 2, "role": "payloadLength" },
+        { "name": "ver",  "offset": 4, "size": 2, "role": "version",
+          "transform": "v + 1985" },        // whitelisted expr; raw value is `v`
+        { "name": "stat", "offset": 6, "size": 2, "role": "status" }
+      ],
+      "payload": { "after": "header", "length": "$len" },  // fixed num | $field | expr
+      "endMarker": { "at": 0, "size": 2, "value": 65535 }  // stop when id == 0xFFFF
+    },
+    "integrity": {                          // OPTIONAL CRC check
+      "crc": {
+        "preset": "CRC16-CCITT-FALSE",      // or a full custom "model"
+        "range": "header+payload",          // "payload" | "header" | "header+payload"
+        "stored": { "source": "trailer", "size": 2 }  // CRC bytes after payload
+      }
+    }
+  }
 }
 
 // ----------------------------------------------------------------------------

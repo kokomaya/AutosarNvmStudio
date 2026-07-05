@@ -19,6 +19,7 @@ import { registerAnnotationCommands } from "./nvm/annotations/annotationCommands
 import { AnnotationService } from "./nvm/annotations/annotationService";
 import { parseArxmlFile } from "./nvm/arxmlParser";
 import { mapBlocksToBuffer } from "./nvm/blockMapper";
+import { registerNvmBlocksView } from "./nvm/blocks/nvmBlocksView";
 import { registerEngineCommands } from "./nvm/engines/engineCommands";
 import { registerReportCommands } from "./nvm/report/reportCommands";
 import { registerReportPreview } from "./nvm/report/reportPanel";
@@ -174,6 +175,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	const annotationService = new AnnotationService(context);
 	context.subscriptions.push(...registerAnnotationCommands(registry, annotationService));
 	context.subscriptions.push(...registerNvmStudioView(registry, annotationService));
+	context.subscriptions.push(...registerNvmBlocksView(registry, context.workspaceState));
 	context.subscriptions.push(...registerReportCommands(registry, annotationService));
 	context.subscriptions.push(...registerReportPreview(registry, annotationService));
 	context.subscriptions.push(...registerLmTools(registry, annotationService));

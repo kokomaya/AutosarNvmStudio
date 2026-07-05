@@ -19,12 +19,18 @@ export class HexEditorRegistry extends Disposable {
 		{ refCount: number; value: HexDiffModelBuilder }
 	>();
 	private onChangeEmitter = new vscode.EventEmitter<HexDocument | undefined>();
+	private onNvmBlocksChangeEmitter = new vscode.EventEmitter<HexDocument>();
 	private _activeDocument?: HexDocument;
 
 	/**
 	 * Event emitter that fires when the focused hex editor changes.
 	 */
 	public readonly onDidChangeActiveDocument = this.onChangeEmitter.event;
+
+	/**
+	 * Fires when the NVM blocks associated with a document are set or cleared.
+	 */
+	public readonly onDidChangeNvmBlocks = this.onNvmBlocksChangeEmitter.event;
 
 	/**
 	 * The currently active hex editor.
@@ -40,6 +46,7 @@ export class HexEditorRegistry extends Disposable {
 		} else {
 			this.nvmBlocks.delete(document);
 		}
+		this.onNvmBlocksChangeEmitter.fire(document);
 	}
 
 	/** Get NVM blocks previously associated with a document. */

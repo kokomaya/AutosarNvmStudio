@@ -35,8 +35,11 @@ import {
 	LayoutConfig,
 	LayoutInput,
 	matchesConfig,
+	ResolveContext,
 	ResolvedLayout,
+	resolveImage,
 	resolveNvmBlocks,
+	resolveSymbols,
 } from "./nvm/layout";
 import { invalidateExternalEngine, isNodeHost, loadExternalEngine } from "./nvm/layout/externalEngine";
 import { ISearchRequest, LiteralSearchRequest, RegexSearchRequest } from "./searchRequest";
@@ -282,6 +285,7 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 			this.gatherSources(dir, configs),
 			this.findArxml(dir),
 		]);
+		// Legacy bundle for the external-engine boundary (packs consume text + sources).
 		const input: LayoutInput = { fileName, ext, text, configs, sources, arxml };
 
 		// Prefer an external engine when a descriptor opts in and the gate passes.
@@ -290,7 +294,30 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 			return external;
 		}
 
-		const resolved = resolveNvmBlocks(input);
+		// Built-in providers run against the vendor-blind context: decode the
+		// image once via the `image` capability, resolve `symbols` lazily (an
+		// AUTOSAR-config symbol table is only built if a provider asks for names).
+		const image = resolveImage({ fileName, ext, text });
+		if (!image) {
+			return undefined;
+		}
+		let symbolCache: ReturnType<typeof resolveSymbols>;
+		let symbolResolved = false;
+		const ctx: ResolveContext = {
+			fileName,
+			ext,
+			image,
+			configs,
+			sources,
+			symbols: () => {
+				if (!symbolResolved) {
+					symbolResolved = true;
+					symbolCache = resolveSymbols({ fileName, ext, image, configs, sources, arxml });
+				}
+				return symbolCache;
+			},
+		};
+		const resolved = resolveNvmBlocks(ctx);
 		return resolved ? { resolved } : undefined;
 	}
 
