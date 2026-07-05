@@ -27,21 +27,43 @@ export function registerNvmBlocksView(
 		showCollapseAll: true,
 	});
 
-	const setArrangement = vscode.commands.registerCommand(
-		"hexEditor.nvm.blocks.setArrangement",
-		async () => {
-			const current = arrangementById(config.arrangementId).id;
-			const pick = await vscode.window.showQuickPick(
-				ARRANGEMENTS.map(a => ({
-					label: `$(${a.icon}) ${a.label}`,
-					description: a.id === current ? vscode.l10n.t("current") : undefined,
-					id: a.id,
-				})),
-				{ title: vscode.l10n.t("Arrange blocks by…") },
-			);
-			if (pick) {
-				await config.setArrangementId(pick.id);
-			}
+	// Reflect the active arrangement (and filter) in the view's subtitle so the
+	// current mode is always visible without opening a menu.
+	const updateMeta = () => {
+		const arrangement = arrangementById(config.arrangementId);
+		view.description = provider.filter
+			? `${arrangement.label} · "${provider.filter}"`
+			: arrangement.label;
+	};
+	config.onDidChange(updateMeta);
+	updateMeta();
+
+	// One command per arrangement so they can populate a real dropdown submenu
+	// (view-title) instead of a command-palette-style quick pick.
+	const arrangeCommands = ARRANGEMENTS.map(a =>
+		vscode.commands.registerCommand(`hexEditor.nvm.blocks.arrange.${a.id}`, async () => {
+			await config.setArrangementId(a.id);
+		}),
+	);
+
+	const filter = vscode.commands.registerCommand("hexEditor.nvm.blocks.filter", async () => {
+		const value = await vscode.window.showInputBox({
+			title: vscode.l10n.t("Filter blocks"),
+			prompt: vscode.l10n.t("Match block name, id or attribute (leave empty to clear)"),
+			value: provider.filter,
+			placeHolder: vscode.l10n.t("e.g. sector 1, 0x0047, DemAdmin…"),
+		});
+		if (value !== undefined) {
+			provider.setFilter(value);
+			updateMeta();
+		}
+	});
+
+	const clearFilter = vscode.commands.registerCommand(
+		"hexEditor.nvm.blocks.clearFilter",
+		() => {
+			provider.setFilter("");
+			updateMeta();
 		},
 	);
 
@@ -78,5 +100,5 @@ export function registerNvmBlocksView(
 		provider.refresh(),
 	);
 
-	return [view, config, setArrangement, configureColumns, refresh];
+	return [view, config, ...arrangeCommands, filter, clearFilter, configureColumns, refresh];
 }

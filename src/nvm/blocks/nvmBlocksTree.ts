@@ -21,6 +21,7 @@ import { BlockViewConfig } from "./columnConfig";
 export class NvmBlocksTree implements vscode.TreeDataProvider<BlockNode> {
 	private readonly _onDidChangeTreeData = new vscode.EventEmitter<BlockNode | undefined>();
 	public readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+	private filterText = "";
 
 	constructor(
 		private readonly registry: HexEditorRegistry,
@@ -39,6 +40,20 @@ export class NvmBlocksTree implements vscode.TreeDataProvider<BlockNode> {
 		this._onDidChangeTreeData.fire(undefined);
 	}
 
+	/** The active free-text filter (empty when off). */
+	public get filter(): string {
+		return this.filterText;
+	}
+
+	/** Set the free-text filter (case-insensitive substring over name/attributes). */
+	public setFilter(text: string): void {
+		const next = text.trim();
+		if (next !== this.filterText) {
+			this.filterText = next;
+			this.refresh();
+		}
+	}
+
 	private get activeDoc(): HexDocument | undefined {
 		return this.registry.activeDocument;
 	}
@@ -47,6 +62,28 @@ export class NvmBlocksTree implements vscode.TreeDataProvider<BlockNode> {
 	public blocks(): NvmBlockInfo[] {
 		const doc = this.activeDoc;
 		return doc ? (this.registry.getNvmBlocks(doc) as NvmBlockInfo[]) : [];
+	}
+
+	/** Blocks after applying the active free-text filter. */
+	private filteredBlocks(): NvmBlockInfo[] {
+		const blocks = this.blocks();
+		if (!this.filterText) {
+			return blocks;
+		}
+		const needle = this.filterText.toLowerCase();
+		return blocks.filter(b => this.matchesFilter(b, needle));
+	}
+
+	private matchesFilter(block: NvmBlockInfo, needle: string): boolean {
+		if (blockLabel(block).toLowerCase().includes(needle)) {
+			return true;
+		}
+		if (block.id.toLowerCase().includes(needle)) {
+			return true;
+		}
+		return (block.attributes ?? []).some(a =>
+			`${a.label} ${a.value}`.toLowerCase().includes(needle),
+		);
 	}
 
 	public getTreeItem(node: BlockNode): vscode.TreeItem {
@@ -80,7 +117,7 @@ export class NvmBlocksTree implements vscode.TreeDataProvider<BlockNode> {
 	public getChildren(node?: BlockNode): BlockNode[] {
 		if (!node) {
 			const arrangement = arrangementById(this.config.arrangementId);
-			return arrangement.arrange(this.blocks());
+			return arrangement.arrange(this.filteredBlocks());
 		}
 		return node.kind === "group" ? node.children : [];
 	}

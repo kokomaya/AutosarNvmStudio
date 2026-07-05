@@ -90,6 +90,18 @@ build({
 	outfile: "dist/inspector.js",
 });
 
+// Build the NVM Blocks Table webview (plain DOM renderer).
+build({
+	entryPoints: ["media/nvm-blocks/blocksTable.ts"],
+	tsconfig: "./tsconfig.json",
+	bundle: true,
+	external: ["vscode"],
+	sourcemap: watch ? "inline" : false,
+	minify,
+	platform: "browser",
+	outfile: "dist/nvmBlocksTable.js",
+});
+
 // Build the webview editors
 build({
 	entryPoints: ["media/editor/hexEdit.tsx"],
@@ -116,4 +128,7 @@ fs.copyFileSync(
 	"engines/vector-fee-v3/engine.json",
 	"dist/engines/vector-fee-v3/engine.json",
 );
+
+// Ship the Blocks Table stylesheet (static file, referenced by the webview).
+fs.copyFileSync("media/nvm-blocks/blocksTable.css", "dist/nvmBlocksTable.css");
 

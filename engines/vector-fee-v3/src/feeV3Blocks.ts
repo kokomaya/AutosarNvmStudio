@@ -260,7 +260,10 @@ export function buildFeeV3Blocks(
 		const blockEnd = hasTail ? nextLinkOffset + nextLinkLength : payloadOffset + netLength;
 		const blockLength = blockEnd - headerOffset;
 
-		const blockUnit = `tag${c.tag}`;
+		// Unique per-instance id/unit so two copies of the same block (e.g. one
+		// per sector) are independently selectable/colorable. The shared logical
+		// identity (below) still groups them in the "by block id" view.
+		const blockUnit = `tag${c.tag}.s${c.bank}.${c.slotIndex}`;
 		const fields: NvmField[] = applyTemplate(struct.chunkHeader, headerOffset, blockUnit);
 		if (markerLength > 0) {
 			fields.push(regionField(struct.marker, markerOffset, markerLength, blockUnit));
@@ -279,7 +282,7 @@ export function buildFeeV3Blocks(
 		}
 
 		blocks.push({
-			id: `tag${c.tag}`,
+			id: `tag${c.tag}.s${c.bank}.${c.slotIndex}`,
 			name: def?.name ?? `Tag ${c.tag}`,
 			offset: headerOffset,
 			length: blockLength,

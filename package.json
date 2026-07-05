@@ -205,10 +205,36 @@
         "title": "Jump to Annotation"
       },
       {
-        "command": "hexEditor.nvm.blocks.setArrangement",
+        "command": "hexEditor.nvm.blocks.arrange.flat",
         "category": "NVM",
-        "title": "Arrange Blocks…",
-        "icon": "$(list-tree)"
+        "title": "Flat (by address)"
+      },
+      {
+        "command": "hexEditor.nvm.blocks.arrange.sector",
+        "category": "NVM",
+        "title": "Group by sector"
+      },
+      {
+        "command": "hexEditor.nvm.blocks.arrange.write",
+        "category": "NVM",
+        "title": "Order by write time"
+      },
+      {
+        "command": "hexEditor.nvm.blocks.arrange.identity",
+        "category": "NVM",
+        "title": "Group by block id"
+      },
+      {
+        "command": "hexEditor.nvm.blocks.filter",
+        "category": "NVM",
+        "title": "Filter Blocks…",
+        "icon": "$(search)"
+      },
+      {
+        "command": "hexEditor.nvm.blocks.clearFilter",
+        "category": "NVM",
+        "title": "Clear Block Filter",
+        "icon": "$(clear-all)"
       },
       {
         "command": "hexEditor.nvm.blocks.configureColumns",
@@ -310,6 +336,11 @@
           "name": "Blocks"
         },
         {
+          "type": "webview",
+          "id": "hexEditor.nvmBlocksTable",
+          "name": "Blocks Table"
+        },
+        {
           "id": "hexEditor.nvmStudio",
           "name": "Annotations"
         }
@@ -381,7 +412,32 @@
         "tags": ["nvm", "hexeditor"]
       }
     ],
+    "submenus": [
+      {
+        "id": "hexEditor.nvm.blocks.arrangeMenu",
+        "label": "Arrange Blocks",
+        "icon": "$(list-tree)"
+      }
+    ],
     "menus": {
+      "hexEditor.nvm.blocks.arrangeMenu": [
+        {
+          "command": "hexEditor.nvm.blocks.arrange.flat",
+          "group": "arrange@1"
+        },
+        {
+          "command": "hexEditor.nvm.blocks.arrange.sector",
+          "group": "arrange@2"
+        },
+        {
+          "command": "hexEditor.nvm.blocks.arrange.write",
+          "group": "arrange@3"
+        },
+        {
+          "command": "hexEditor.nvm.blocks.arrange.identity",
+          "group": "arrange@4"
+        }
+      ],
       "commandPalette": [
         {
           "command": "hexEditor.goToOffset",
@@ -426,19 +482,29 @@
       ],
       "view/title": [
         {
-          "command": "hexEditor.nvm.blocks.setArrangement",
+          "submenu": "hexEditor.nvm.blocks.arrangeMenu",
           "when": "view == hexEditor.nvmBlocks",
           "group": "navigation@1"
         },
         {
-          "command": "hexEditor.nvm.blocks.configureColumns",
+          "command": "hexEditor.nvm.blocks.filter",
           "when": "view == hexEditor.nvmBlocks",
           "group": "navigation@2"
         },
         {
-          "command": "hexEditor.nvm.blocks.refresh",
+          "command": "hexEditor.nvm.blocks.configureColumns",
           "when": "view == hexEditor.nvmBlocks",
           "group": "navigation@3"
+        },
+        {
+          "command": "hexEditor.nvm.blocks.refresh",
+          "when": "view == hexEditor.nvmBlocks",
+          "group": "navigation@4"
+        },
+        {
+          "command": "hexEditor.nvm.blocks.clearFilter",
+          "when": "view == hexEditor.nvmBlocks",
+          "group": "1_filter@1"
         },
         {
           "command": "hexEditor.nvm.openReportPreview",
