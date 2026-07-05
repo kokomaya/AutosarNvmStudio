@@ -40,9 +40,21 @@ const search = document.getElementById("search") as HTMLInputElement;
 const tableWrap = document.getElementById("table-wrap") as HTMLElement;
 const statusEl = document.getElementById("status") as HTMLElement;
 
+/** Cap on rows rendered to the DOM at once — keeps large dumps (hundreds of
+ * historical chunks) responsive without full virtualization. */
+const MAX_RENDERED_ROWS = 500;
+
+// Debounce the filter so typing over a large table doesn't rebuild the DOM on
+// every keystroke.
+let filterTimer: ReturnType<typeof setTimeout> | undefined;
 search.addEventListener("input", () => {
-	filterText = search.value.trim().toLowerCase();
-	render();
+	if (filterTimer !== undefined) {
+		clearTimeout(filterTimer);
+	}
+	filterTimer = setTimeout(() => {
+		filterText = search.value.trim().toLowerCase();
+		render();
+	}, 150);
 });
 
 window.addEventListener("message", e => {
@@ -96,7 +108,11 @@ function render(): void {
 		return;
 	}
 	const visible = sortRows(rows.filter(matches));
-	statusEl.textContent = `${visible.length} / ${rows.length} blocks`;
+	const shown = visible.length > MAX_RENDERED_ROWS ? visible.slice(0, MAX_RENDERED_ROWS) : visible;
+	statusEl.textContent =
+		shown.length < visible.length
+			? `showing ${shown.length} of ${visible.length} (filtered from ${rows.length}) — refine search to see more`
+			: `${visible.length} / ${rows.length} blocks`;
 
 	const table = document.createElement("table");
 	const thead = document.createElement("thead");
@@ -122,7 +138,7 @@ function render(): void {
 	table.appendChild(thead);
 
 	const tbody = document.createElement("tbody");
-	for (const row of visible) {
+	for (const row of shown) {
 		const tr = document.createElement("tr");
 		if (row.isLatest) {
 			tr.classList.add("latest");

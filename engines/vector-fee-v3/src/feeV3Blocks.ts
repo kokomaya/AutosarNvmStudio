@@ -100,6 +100,12 @@ export interface FeeV3BlockOptions {
 	numberOfSectors?: number;
 	sectorSize?: number;
 	structure?: FeeV3StructureTemplate;
+	/**
+	 * Include historical (superseded) chunks left by append-only writes, each
+	 * flagged `stale`. Defaults to `true`. Set `false` to emit only the current
+	 * versions the link table references.
+	 */
+	includeStaleChunks?: boolean;
 }
 
 /** Instantiate template fields at `regionOffset`, tagged with `unit`. */
@@ -158,6 +164,7 @@ export function buildFeeV3Blocks(
 			alignment: options.alignment,
 			numberOfSectors: options.numberOfSectors,
 			sectorSize: options.sectorSize,
+			includeStaleChunks: options.includeStaleChunks,
 		});
 	} catch {
 		return [];
@@ -260,10 +267,12 @@ export function buildFeeV3Blocks(
 		const blockEnd = hasTail ? nextLinkOffset + nextLinkLength : payloadOffset + netLength;
 		const blockLength = blockEnd - headerOffset;
 
-		// Unique per-instance id/unit so two copies of the same block (e.g. one
-		// per sector) are independently selectable/colorable. The shared logical
-		// identity (below) still groups them in the "by block id" view.
-		const blockUnit = `tag${c.tag}.s${c.bank}.${c.slotIndex}`;
+		// Unique per-instance id/unit so every copy of the same block (versions in
+		// the same sector, or one per sector) is independently selectable/colorable.
+		// Historical chunks share slotIndex -1, so key on the header offset, which
+		// is globally unique. The shared logical identity (below) still groups them
+		// in the "by block id" view.
+		const blockUnit = `tag${c.tag}.s${c.bank}.@${headerOffset.toString(16)}`;
 		const fields: NvmField[] = applyTemplate(struct.chunkHeader, headerOffset, blockUnit);
 		if (markerLength > 0) {
 			fields.push(regionField(struct.marker, markerOffset, markerLength, blockUnit));
@@ -278,11 +287,20 @@ export function buildFeeV3Blocks(
 			fields.push(regionField(struct.chunkTrailer, trailerStart, trailerLength, blockUnit));
 		}
 		if (hasTail) {
-			fields.push(regionField(struct.nextLink, nextLinkOffset, nextLinkLength, blockUnit));
+			const nextLinkField = regionField(struct.nextLink, nextLinkOffset, nextLinkLength, blockUnit);
+			// The next-chunk link stores the address of this block's PREVIOUS
+			// version's tail; expose it as an in-file jump when it resolves.
+			if (c.nextLinkTargetOffset !== undefined) {
+				nextLinkField.link = {
+					targetOffset: c.nextLinkTargetOffset,
+					label: `${def?.name ?? `Tag ${c.tag}`} (previous version)`,
+				};
+			}
+			fields.push(nextLinkField);
 		}
 
 		blocks.push({
-			id: `tag${c.tag}.s${c.bank}.${c.slotIndex}`,
+			id: blockUnit,
 			name: def?.name ?? `Tag ${c.tag}`,
 			offset: headerOffset,
 			length: blockLength,
@@ -295,17 +313,20 @@ export function buildFeeV3Blocks(
 				mgmtType: c.mgmtType,
 				netLength,
 				rawSize,
+				stale: c.stale,
 			},
 			// Vendor-neutral projection for the editor's Blocks views. `sequence`
 			// is BEST-EFFORT: FEE stores no monotonic write counter, so we order by
-			// sector then link-table slot (higher slot = written later in a sector).
+			// sector then physical header offset — Vector writes a sector top-down,
+			// so the highest-offset chunk in a sector is the most recently written.
 			group: { key: `sector${c.bank}`, label: `Sector ${c.bank}`, order: c.bank },
-			sequence: c.bank * SECTOR_SEQ_STRIDE + c.slotIndex,
+			sequence: c.bank * SECTOR_SEQ_STRIDE + headerOffset,
 			identity: { key: `tag:0x${c.tag.toString(16)}`, label: def?.name ?? `Tag ${c.tag}` },
 			attributes: [
 				{ key: "id", label: "ID", value: hex(c.tag, 4), kind: "id" },
+				{ key: "state", label: "State", value: c.stale ? "stale" : "latest", kind: "state" },
 				{ key: "sector", label: "Sector", value: c.bank, kind: "sector" },
-				{ key: "slot", label: "Slot", value: c.slotIndex },
+				{ key: "slot", label: "Slot", value: c.slotIndex < 0 ? "-" : c.slotIndex },
 				{ key: "mgmt", label: "Mgmt", value: mgmtLabel(c.mgmtType), kind: "mgmt" },
 				{ key: "dataset", label: "Dataset", value: c.datasetIndex },
 				{ key: "size", label: "Size", value: rawSize },
@@ -315,11 +336,17 @@ export function buildFeeV3Blocks(
 		});
 	}
 
-	// Flag the newest instance of each logical block (highest write sequence).
+	// Flag the current version of each logical block. The active sector's link
+	// table is authoritative: a non-stale chunk IS the current version. Historical
+	// (stale) chunks never win, even if physically later, so fall back to the
+	// highest write sequence only among non-stale instances.
 	const latestByIdentity = new Map<string, NvmBlock>();
 	for (const b of blocks) {
 		if (!b.identity || typeof b.sequence !== "number") {
 			continue;
+		}
+		if ((b.raw as { stale?: boolean })?.stale) {
+			continue; // stale copies are never the latest
 		}
 		const best = latestByIdentity.get(b.identity.key);
 		if (!best || (best.sequence ?? -Infinity) < b.sequence) {

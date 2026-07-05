@@ -9,6 +9,6 @@
   "sdkVersion": 2,
   "capabilities": {
     "sources": { "feeLcfg": "Fee_Lcfg.c" },
-    "options": ["alignment", "numberOfSectors", "sectorSize", "structure"]
+    "options": ["alignment", "numberOfSectors", "sectorSize", "structure", "includeStaleChunks"]
   }
 }

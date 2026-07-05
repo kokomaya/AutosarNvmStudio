@@ -599,7 +599,14 @@ export const nvmFieldRangesPage = selectorFamily({
 			const pageSize = get(dataPageSize);
 			const pageStart = pageSize * pageNumber;
 			const pageEnd = pageStart + pageSize;
-			return all.filter(r => r.start < pageEnd && r.end > pageStart);
+			// `all` is sorted by start; binary-search the window instead of an O(n)
+			// scan (there can be tens of thousands of ranges across stale chunks).
+			// Mirrors `decoratorsPage` above.
+			const searcherByEnd = binarySearch<NvmFieldRange>(r => r.end);
+			const startIndex = searcherByEnd(pageStart, all);
+			const searcherByStart = binarySearch<NvmFieldRange>(r => r.start);
+			const endIndex = searcherByStart(pageEnd + 1, all);
+			return all.slice(startIndex, endIndex).filter(r => r.start < pageEnd && r.end > pageStart);
 		},
 });
 

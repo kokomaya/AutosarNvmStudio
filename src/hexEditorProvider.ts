@@ -200,13 +200,32 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 
 				const result = await this.tryLoadNvmBlocks(document, fsPath, dir);
 				if (result && result.resolved.blocks.length > 0) {
-					this._registry.setNvmBlocks(document, result.resolved.blocks);
+					const allBlocks = result.resolved.blocks;
+					this._registry.setNvmBlocks(document, allBlocks);
+
+					// Staged push: some engines (e.g. Vector FEE V3) recover hundreds
+					// of historical (`stale`) block copies. Push the current versions
+					// first so the editor is instantly interactive, then push the full
+					// set on the next tick so the history fills in without blocking.
+					const currentBlocks = allBlocks.filter(
+						b => !(b.raw as { stale?: boolean } | undefined)?.stale,
+					);
+					const hasStale = currentBlocks.length !== allBlocks.length;
 					messageHandler.sendEvent({
 						type: MessageType.SetNvmBlocks,
-						blocks: result.resolved.blocks,
+						blocks: hasStale ? currentBlocks : allBlocks,
 					});
+					if (hasStale) {
+						setTimeout(() => {
+							messageHandler.sendEvent({
+								type: MessageType.SetNvmBlocks,
+								blocks: allBlocks,
+							});
+						}, 0);
+					}
 					console.debug(
-						`Auto-loaded NVM layout [${result.resolved.providerId}] ${fsPath} -> ${result.resolved.blocks.length} blocks`,
+						`Auto-loaded NVM layout [${result.resolved.providerId}] ${fsPath} -> ${allBlocks.length} blocks` +
+							(hasStale ? ` (${currentBlocks.length} current, ${allBlocks.length - currentBlocks.length} stale deferred)` : ""),
 					);
 
 					// Hot reload: when the loaded external engine script changes,
