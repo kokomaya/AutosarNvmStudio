@@ -4,6 +4,7 @@
 
 import { HexDecorator } from "./decorators";
 import { HexDocumentEditOp } from "./hexDocumentModel";
+import { NvmDecodedNode } from "./nvm/structRich";
 import { ISerializedEdits } from "./serialization";
 
 export const enum MessageType {
@@ -182,6 +183,14 @@ export interface NvmBlockInfo {
 	isLatest?: boolean;
 	/** Vendor-neutral display attributes (the configurable columns). */
 	attributes?: NvmAttribute[];
+	/**
+	 * Business-decoded value tree for this block, produced by the engine from a
+	 * struct definition it resolved (from C source / ARXML / JSON). Node offsets
+	 * are absolute editor byte offsets. The plugin renders this generically and
+	 * never interprets vendor semantics — it only appears on blocks the engine
+	 * chose to bind to a struct, so most blocks omit it.
+	 */
+	decoded?: NvmDecodedNode[];
 }
 
 export interface SetNvmBlocksMessage {

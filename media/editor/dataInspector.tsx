@@ -5,6 +5,8 @@ import React, { Suspense, useEffect, useMemo, useState } from "react";
 // recoil imports below
 import { useRecoilValue, useSetRecoilState } from "recoil";
 import { Endianness } from "../../shared/protocol";
+import { NvmDecodedNode } from "../../shared/nvm/structRich";
+import { Range } from "../../shared/util/range";
 import { FocusedElement, getDataCellElement, useDisplayContext } from "./dataDisplayContext";
 import _style from "./dataInspector.css";
 import { inspectableTypes } from "./dataInspectorProperties";
@@ -90,9 +92,15 @@ export const DataInspectorAside: React.FC<{ onInspecting?(isInspecting: boolean)
 						<dt>Length</dt>
 						<dd>{selectedBlock.length}</dd>
 					</dl>
-					<div style={{ whiteSpace: "pre-wrap", overflow: "auto", maxHeight: 200 }}>
-						<code>{JSON.stringify(selectedBlock.raw ?? {}, null, 2)}</code>
-					</div>
+					{selectedBlock.decoded && selectedBlock.decoded.length > 0 && (
+						<NvmDecodedTree nodes={selectedBlock.decoded} />
+					)}
+					<details className={style.nvmRawDetails}>
+						<summary>Raw metadata</summary>
+						<div style={{ whiteSpace: "pre-wrap", overflow: "auto", maxHeight: 200 }}>
+							<code>{JSON.stringify(selectedBlock.raw ?? {}, null, 2)}</code>
+						</div>
+					</details>
 					<div style={{ marginTop: 8 }}>
 						<button
 							onClick={() => {
@@ -290,6 +298,96 @@ const NvmTagSection: React.FC<{ start: number; end: number }> = ({ start, end })
 };
 
 const lookahead = 16;
+
+/** Format a decoded leaf's value for display (dec · hex, enum label, unit). */
+function formatNodeValue(node: NvmDecodedNode): string {
+	const parts: string[] = [];
+	if (typeof node.value === "boolean") {
+		// Flag / bool leaves read better as TRUE/FALSE (matches the UDS-bit dump).
+		parts.push(node.value ? "TRUE" : "FALSE");
+	} else if (node.value !== undefined) {
+		parts.push(String(node.value));
+	}
+	if (node.hex && node.value !== undefined && typeof node.value !== "string") {
+		parts.push(`· ${node.hex}`);
+	} else if (node.hex && node.value === undefined) {
+		parts.push(node.hex);
+	}
+	if (node.enumLabel) {
+		parts.push(`(${node.enumLabel})`);
+	}
+	if (node.unit) {
+		parts.push(node.unit);
+	}
+	if (node.bits) {
+		parts.push(`[${node.bits.width}b]`);
+	}
+	return parts.join(" ");
+}
+
+/**
+ * One row of the decoded value tree. Branch nodes (structs / arrays) use a
+ * native <details> so the tree is collapsible with zero extra state; leaves show
+ * `name : value`. Clicking any row reveals and selects the node's bytes.
+ */
+const NvmDecodedRow: React.FC<{ node: NvmDecodedNode; depth: number }> = ({ node, depth }) => {
+	const ctx = useDisplayContext();
+	const setOffset = useSetRecoilState(select.offset);
+	const columnWidth = useRecoilValue(select.columnWidth);
+	const hasChildren = !!node.children && node.children.length > 0;
+
+	const reveal = (e: React.MouseEvent) => {
+		e.stopPropagation();
+		setOffset(select.startOfRowContainingByte(node.offset, columnWidth));
+		ctx.focusedElement = new FocusedElement(false, node.offset);
+		if (node.length > 0) {
+			ctx.setSelectionRanges([Range.inclusive(node.offset, node.offset + node.length - 1)]);
+		}
+	};
+
+	const indent = { paddingLeft: `${depth * 12}px` };
+
+	if (hasChildren) {
+		// A node may carry BOTH a summary value (e.g. a bitflags byte `0x1B`) and
+		// children (the expanded bits). Prefer showing that summary; else the type.
+		const summary = formatNodeValue(node);
+		return (
+			<details className={style.nvmDecodedBranch}>
+				<summary style={indent} onClick={reveal}>
+					<span className={style.nvmDecodedName}>{node.name}</span>
+					<span className={style.nvmDecodedMeta}>
+						{summary || node.type}
+						{!summary && node.children!.length ? ` · ${node.children!.length}` : ""}
+					</span>
+				</summary>
+				{node.children!.map((child, i) => (
+					<NvmDecodedRow key={`${child.name}:${child.offset}:${i}`} node={child} depth={depth + 1} />
+				))}
+			</details>
+		);
+	}
+
+	return (
+		<div className={style.nvmDecodedLeaf} style={indent} onClick={reveal} title="Reveal bytes">
+			<span className={style.nvmDecodedName}>{node.name}</span>
+			<span className={style.nvmDecodedValue}>{formatNodeValue(node)}</span>
+		</div>
+	);
+};
+
+/**
+ * Renders a block's business-decoded value tree (produced by the engine from a
+ * struct definition). Vendor-blind: the webview only lays out the tree the
+ * engine emitted; it never decodes anything itself.
+ */
+const NvmDecodedTree: React.FC<{ nodes: NvmDecodedNode[] }> = ({ nodes }) => (
+	<div className={style.nvmDecoded}>
+		<div className={style.nvmDecodedTitle}>Decoded</div>
+		{nodes.map((node, i) => (
+			<NvmDecodedRow key={`${node.name}:${node.offset}:${i}`} node={node} depth={0} />
+		))}
+	</div>
+);
 
 /**
  * Explains the byte at `offset` in terms of the parsed NVM layout: which block

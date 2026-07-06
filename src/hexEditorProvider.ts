@@ -35,6 +35,7 @@ import {
 	LayoutConfig,
 	LayoutInput,
 	matchesConfig,
+	matchSpecificity,
 	ResolveContext,
 	ResolvedLayout,
 	resolveImage,
@@ -351,15 +352,24 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 		dir: string,
 		input: LayoutInput,
 	): Promise<NvmLoadResult | undefined> {
-		const config = input.configs.find(
+		// Several descriptors can match the same dump (e.g. a broad coloring-only
+		// one and a narrower struct-decoding one). Pick the most *specifically*
+		// gated match rather than whichever happens to sort first on disk — the
+		// tie-break stays vendor-blind (it ranks the generic `match` gate, never
+		// the engine `options`). A later, equally-specific descriptor wins so a
+		// project-local override can shadow a shared one.
+		const candidates = input.configs.filter(
 			c =>
 				((typeof c.engine === "string" && c.engine) ||
 					(typeof c.engineScript === "string" && c.engineScript)) &&
 				matchesConfig(c, input),
 		);
-		if (!config) {
+		if (candidates.length === 0) {
 			return undefined;
 		}
+		const config = candidates.reduce((best, c) =>
+			matchSpecificity(c) >= matchSpecificity(best) ? c : best,
+		);
 
 		// The presence of a layout descriptor that points at an engine is the
 		// user's opt-in: without a layout we cannot parse at all. We still keep

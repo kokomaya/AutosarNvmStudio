@@ -189,6 +189,29 @@ export function matchesConfig(config: LayoutConfig, target: FileRef): boolean {
 }
 
 /**
+ * Rank how *specific* a descriptor's `match` gate is, so that when several
+ * descriptors match the same file the most narrowly-targeted one wins. This is
+ * vendor-blind: it looks only at the generic `match` gate (extension +
+ * file-name substrings), never at the descriptor's engine `options`. A gate
+ * that names the file by substring is more intentional than one that only
+ * constrains the extension, which in turn beats a gate-less catch-all.
+ */
+export function matchSpecificity(config: LayoutConfig): number {
+	const m = config.match;
+	if (!m) {
+		return 0;
+	}
+	let score = 0;
+	if (m.fileNameIncludes?.length) {
+		score += 2;
+	}
+	if (m.ext?.length) {
+		score += 1;
+	}
+	return score;
+}
+
+/**
  * Fill in each block's `name` from a resolved {@link SymbolTable} when the
  * block's numeric logical id matches a symbol. Vendor-blind business naming:
  * a no-op unless a `symbols` adapter contributed a matching entry.

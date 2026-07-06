@@ -15,15 +15,21 @@
 
 import * as fs from "fs";
 import {
+    arxmlStructs,
     computeCrc,
     crcPresets,
     decodeStruct,
+    decodeStructRich,
     importNvmCatalog,
     loadHexImage,
     MemoryImage,
+    mergeCatalogs,
+    NvmDecodedNode,
     NvmModel,
     parseBlkStruct,
+    parseCStructs,
     parseNvm,
+    parseStructCatalog,
     resolveCrcPreset,
     structByteLength,
     validateProfile,
@@ -214,6 +220,62 @@ function cmdDecode(args: ParsedArgs): number {
 	return 0;
 }
 
+/** Print a decoded node tree with indentation. */
+function printNodes(nodes: NvmDecodedNode[], depth = 0): void {
+	const pad = "  ".repeat(depth + 1);
+	for (const n of nodes) {
+		if (n.children && n.children.length) {
+			console.log(`${pad}${n.name}: ${n.type}[${n.children.length}] @0x${n.offset.toString(16)}`);
+			printNodes(n.children, depth + 1);
+		} else {
+			const enumLabel = n.enumLabel ? ` (${n.enumLabel})` : "";
+			const unit = n.unit ? ` ${n.unit}` : "";
+			const hex = n.hex ? ` · ${n.hex}` : "";
+			console.log(
+				`${pad}${String(n.name).padEnd(28)} ${String(n.value)}${enumLabel}${unit}${hex} @0x${n.offset.toString(16)}`,
+			);
+		}
+	}
+}
+
+function cmdDecodeRich(args: ParsedArgs): number {
+	const path = args.positionals[0];
+	const catalogPath = args.options.catalog;
+	const structName = args.options.struct;
+	if (!path || typeof catalogPath !== "string" || typeof structName !== "string") {
+		console.error(
+			"usage: nvmcli decode-rich <file.mot|bin> --catalog <cat.json> --struct <Name> [--at <addr>] [--source <c-or-arxml>] [--json]",
+		);
+		return 2;
+	}
+	const image = loadImageFile(path);
+	// Build the catalog from JSON + optional extra C/ARXML sources.
+	const parts = [parseStructCatalog(JSON.parse(fs.readFileSync(catalogPath, "utf8")))];
+	if (typeof args.options.source === "string") {
+		const content = fs.readFileSync(args.options.source, "utf8");
+		const head = content.slice(0, 512);
+		parts.push(head.includes("<AUTOSAR") || head.includes("<?xml") ? arxmlStructs(content) : parseCStructs(content));
+	}
+	const catalog = mergeCatalogs(...parts);
+	const def = catalog.structs[structName];
+	if (!def) {
+		console.error(`struct "${structName}" not found; available: ${Object.keys(catalog.structs).join(", ")}`);
+		return 1;
+	}
+	const at =
+		typeof args.options.at === "string" ? parseIntFlexible(args.options.at) : image.baseAddress;
+	// Read a generous window; the decoder clamps to what it needs.
+	const window = image.read(at, 4096) ?? new Uint8Array(0);
+	const nodes = decodeStructRich(window, def, { baseOffset: at, catalog });
+	if (args.options.json) {
+		console.log(JSON.stringify(nodes, null, 2));
+	} else {
+		console.log(`struct: ${def.name} @ 0x${at.toString(16)}\n`);
+		printNodes(nodes);
+	}
+	return 0;
+}
+
 function cmdImport(args: ParsedArgs): number {
 	const nvmPath = args.options.nvm;
 	if (typeof nvmPath !== "string") {
@@ -268,6 +330,8 @@ function main(): number {
 			return cmdImage(args);
 		case "decode":
 			return cmdDecode(args);
+		case "decode-rich":
+			return cmdDecodeRich(args);
 		case "import":
 			return cmdImport(args);
 		case "help":
@@ -281,6 +345,8 @@ function main(): number {
 					"  crc    <image> [--preset <name>] [--range a:b]   Compute a CRC over the image",
 					"  image  <file.mot|hex> [--at <addr>] [--len <n>]  Decode an S-record/Intel HEX image",
 					"  decode <file> --struct <def.blk> [--at <addr>]   Decode a struct at an address",
+					"  decode-rich <file> --catalog <cat.json> --struct <Name> [--at <addr>] [--source <c/arxml>]",
+					"                                                   Decode a rich struct tree (arrays/nested/enums)",
 					"  import --nvm <f> [--fee <f>] [--fls <f>] [--json] Import a block catalog from ECUC ARXML",
 					"",
 					`crc presets: ${Object.keys(crcPresets).join(", ")}`,

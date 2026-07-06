@@ -37,6 +37,25 @@ export interface NvmAttribute {
 	kind?: string;
 }
 
+/**
+ * One node of a business-decoded value tree (mirror of the editor's
+ * `NvmDecodedNode`). Offsets are absolute editor byte offsets. The editor
+ * renders this opaquely; the engine fills it via `sdk.decodeStructRich`.
+ */
+export interface NvmDecodedNode {
+	name: string;
+	type: string;
+	offset: number;
+	length: number;
+	raw?: number | string;
+	value?: number | string | boolean;
+	unit?: string;
+	enumLabel?: string;
+	hex?: string;
+	bits?: { width: number; offset: number };
+	children?: NvmDecodedNode[];
+}
+
 /** One NVM block returned to the editor. */
 export interface NvmBlock {
 	id: string;
@@ -55,6 +74,8 @@ export interface NvmBlock {
 	isLatest?: boolean;
 	/** Vendor-neutral display attributes (the editor's configurable columns). */
 	attributes?: NvmAttribute[];
+	/** Business-decoded value tree (set only for blocks bound to a struct). */
+	decoded?: NvmDecodedNode[];
 }
 
 /** The generic bundle the editor gathers and hands to `parse`. */
@@ -67,11 +88,38 @@ export interface LayoutInput {
 	configs: unknown[];
 }
 
+/**
+ * Minimal mirror of the editor's rich struct types (the pieces this engine
+ * touches). The authoritative definitions live in `shared/nvm/structRich.ts`;
+ * these are structural duplicates so the pack stays self-contained.
+ */
+export interface NvmStructCatalog {
+	structs: Record<string, unknown>;
+	enums: Record<string, unknown>;
+}
+
+export interface DecodeRichOpts {
+	baseOffset: number;
+	catalog: NvmStructCatalog;
+	maxNodes?: number;
+}
+
 /** The stable, versioned primitive API the editor injects. */
 export interface EngineSdk {
 	readonly version: number;
 	loadHexImage(text: string): HexImage;
 	resolveFieldLink?: unknown;
+	// --- rich business-struct decoding (SDK v3+; guarded by `version >= 3`) ---
+	decodeStructRich?(
+		bytes: Uint8Array,
+		def: unknown,
+		opts: DecodeRichOpts,
+	): NvmDecodedNode[];
+	parseStructCatalog?(json: unknown): NvmStructCatalog;
+	mergeCatalogs?(...catalogs: NvmStructCatalog[]): NvmStructCatalog;
+	parseCStructs?(source: string): NvmStructCatalog;
+	parseCStructsEx?(source: string): { catalog: NvmStructCatalog; diagnostics: string[] };
+	arxmlStructs?(xmlText: string): NvmStructCatalog;
 	[key: string]: unknown;
 }
 

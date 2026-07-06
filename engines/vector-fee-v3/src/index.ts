@@ -20,7 +20,13 @@ export function createEngine(sdk: EngineSdk): Engine {
 			// `input.sources` is keyed by the logical names the descriptor declared
 			// (e.g. { "feeLcfg": "Fee_Lcfg.c" }).
 			const feeLcfg = input.sources.feeLcfg || input.sources["fee_lcfg.c"];
-			return buildFeeV3Blocks(sdk, input.text, feeLcfg, (options as FeeV3BlockOptions) || {});
+			return buildFeeV3Blocks(
+				sdk,
+				input.text,
+				feeLcfg,
+				(options as FeeV3BlockOptions) || {},
+				input.sources,
+			);
 		},
 	};
 }

@@ -37,6 +37,82 @@
 	margin: 0 0 0.5rem 0;
 }
 
+/* --- decoded business-value tree --- */
+.nvmDecoded {
+	margin: 0 0 0.6rem 0;
+	font-family: var(--vscode-editor-font-family);
+	font-size: 0.9em;
+	/*
+	 * A decoded SafeSection/DEM block can be hundreds of rows. Give the tree its
+	 * own scroll region so it never pushes the Tags section and byte inspector
+	 * below off-screen; the outer .dataInspectorWrap scrolls the rest.
+	 */
+	max-height: 50vh;
+	overflow-y: auto;
+	overflow-x: hidden;
+}
+
+.nvmDecodedTitle {
+	font-size: 0.85em;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	font-weight: 600;
+	opacity: 0.8;
+	margin-bottom: 4px;
+	font-family: var(--vscode-font-family);
+}
+
+.nvmDecodedLeaf {
+	display: flex;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 1px 4px;
+	border-radius: 2px;
+	cursor: pointer;
+}
+
+.nvmDecodedLeaf:hover,
+.nvmDecodedBranch > summary:hover {
+	background: var(--vscode-list-hoverBackground);
+}
+
+.nvmDecodedName {
+	color: var(--vscode-symbolIcon-variableForeground, inherit);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.nvmDecodedValue {
+	color: var(--vscode-debugTokenExpression-number, inherit);
+	text-align: right;
+	white-space: nowrap;
+}
+
+.nvmDecodedMeta {
+	opacity: 0.6;
+	font-size: 0.85em;
+	margin-left: 8px;
+}
+
+.nvmDecodedBranch > summary {
+	cursor: pointer;
+	user-select: none;
+	padding: 1px 4px;
+	border-radius: 2px;
+	display: flex;
+	justify-content: space-between;
+	gap: 8px;
+}
+
+.nvmRawDetails > summary {
+	cursor: pointer;
+	opacity: 0.7;
+	font-size: 0.85em;
+	user-select: none;
+	margin: 4px 0;
+}
+
 .nvmTagSection {
 	padding: 0.6rem 0.5rem;
 	border-top: 1px solid var(--vscode-panel-border);

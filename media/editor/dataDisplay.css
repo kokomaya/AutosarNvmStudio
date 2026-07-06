@@ -161,6 +161,20 @@
 	gap: 4px;
 }
 
+/*
+ * Scroll container for the aside Data Inspector. Without a bounded height +
+ * overflow the decoded struct tree (which can be hundreds of rows for a
+ * SafeSection / DEM block) spills off-screen with no scrollbar. Cap it to the
+ * viewport and let it scroll on its own.
+ */
+.dataInspectorWrap {
+	max-height: calc(100vh - 40px);
+	overflow-y: auto;
+	overflow-x: hidden;
+	/* Reserve room for the native scrollbar so rows aren't clipped under it. */
+	padding-right: var(--scrollbar-width, 10px);
+}
+
 /* NVM tooltip styles */
 .nvmTooltip {
 	padding: 6px 8px;

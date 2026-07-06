@@ -9,6 +9,7 @@ const fileImports = [
 	() => import("./nvmKernel.test"),
 	() => import("./nvmLoaders.test"),
 	() => import("./nvmArxml.test"),
+	() => import("./nvmStructRich.test"),
 ];
 
 export async function run(): Promise<void> {

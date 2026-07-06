@@ -11,6 +11,12 @@
  */
 
 import { feeLcfgByTag, parseFeeLcfg } from "./feeLcfg";
+import {
+	buildStructResolver,
+	decodeBoundBlock,
+	FeeV3StructOptions,
+	matchBinding,
+} from "./feeV3Structs";
 import { EngineSdk, NvmBlock, NvmField } from "./types";
 import { FeeV3Chunk, parseVectorFeeV3 } from "./vectorFeeV3";
 
@@ -95,7 +101,7 @@ export const DEFAULT_FEE_V3_STRUCTURE: Required<FeeV3StructureTemplate> = {
 };
 
 /** Tunable Vector FEE V3 container parameters (from a `*.nvmlayout.json`). */
-export interface FeeV3BlockOptions {
+export interface FeeV3BlockOptions extends FeeV3StructOptions {
 	alignment?: number;
 	numberOfSectors?: number;
 	sectorSize?: number;
@@ -147,6 +153,7 @@ export function buildFeeV3Blocks(
 	imageText: string,
 	feeLcfgSource?: string,
 	options: FeeV3BlockOptions = {},
+	sources: Record<string, string> = {},
 ): NvmBlock[] {
 	let image;
 	try {
@@ -181,6 +188,10 @@ export function buildFeeV3Blocks(
 	const byTag = feeLcfgSource ? feeLcfgByTag(parseFeeLcfg(feeLcfgSource)) : undefined;
 	const base = result.baseAddress;
 	const blocks: NvmBlock[] = [];
+
+	// Optional business-struct decoding: build the catalog + bindings from the
+	// declared struct sources. `undefined` when not configured or SDK < v3.
+	const structResolver = buildStructResolver(sdk, sources, options);
 
 	// 1) Sector structure: header + link table (one slot per block index).
 	const alignment = result.alignment;
@@ -299,9 +310,27 @@ export function buildFeeV3Blocks(
 			fields.push(nextLinkField);
 		}
 
+		// Business-struct decode: if this block is bound to a struct AND has net
+		// business payload, decode it into a value tree the inspector renders.
+		const blockName = def?.name ?? `Tag ${c.tag}`;
+		let decoded;
+		if (structResolver && netLength > 0 && (structResolver.decodeStale || !c.stale)) {
+			const binding = matchBinding(structResolver, {
+				name: blockName,
+				tag: c.tag,
+				identityKey: `tag:0x${c.tag.toString(16)}`,
+			});
+			if (binding) {
+				// c.data is the full stored payload view; the net business slice is
+				// its first `netLength` bytes, based at payloadOffset (absolute).
+				const businessBytes = c.data.subarray(0, netLength);
+				decoded = decodeBoundBlock(structResolver, binding, businessBytes, payloadOffset);
+			}
+		}
+
 		blocks.push({
 			id: blockUnit,
-			name: def?.name ?? `Tag ${c.tag}`,
+			name: blockName,
 			offset: headerOffset,
 			length: blockLength,
 			raw: {
@@ -333,6 +362,7 @@ export function buildFeeV3Blocks(
 				{ key: "payload", label: "Payload", value: netLength },
 			],
 			fields,
+			decoded,
 		});
 	}
 

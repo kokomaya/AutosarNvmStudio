@@ -6,9 +6,22 @@
   "entry": "vectorFeeV3.engine.js",
   "publisher": "reference",
   "source": "bundled",
-  "sdkVersion": 2,
+  "sdkVersion": 3,
   "capabilities": {
-    "sources": { "feeLcfg": "Fee_Lcfg.c" },
-    "options": ["alignment", "numberOfSectors", "sectorSize", "structure", "includeStaleChunks"]
+    "sources": {
+      "feeLcfg": "Fee_Lcfg.c",
+      "_comment": "Additional struct-source files (C headers / ARXML) are declared per-descriptor under `sources` and referenced from `options.structs.fromSources`."
+    },
+    "options": [
+      "alignment",
+      "numberOfSectors",
+      "sectorSize",
+      "structure",
+      "includeStaleChunks",
+      "structCatalog",
+      "structs",
+      "blockStructs",
+      "decodeStale"
+    ]
   }
 }

@@ -14,23 +14,37 @@
  */
 
 import {
+	arxmlStructs,
+	compileBlkToRich,
 	computeCrc,
 	decodeLinkValue,
 	decodeStruct,
+	decodeStructRich,
 	evaluateExpression,
 	loadHexImage,
+	mergeCatalogs,
 	parseBlkStruct,
+	parseCStructs,
+	parseCStructsEx,
 	parseEcucModule,
 	parseIntelHex,
 	parseSRecord,
+	parseStructCatalog,
 	parseXml,
 	resolveCrcPreset,
 	resolveFieldLink,
 	structByteLength,
 } from "../../../shared/nvm";
 
-/** Bumped whenever the injected SDK surface changes incompatibly. */
-export const ENGINE_SDK_VERSION = 2;
+/**
+ * Bumped whenever the injected SDK surface changes incompatibly.
+ *
+ * v3 adds the rich business-struct decoding surface (`decodeStructRich` and the
+ * three struct-source parsers). It is a pure superset of v2, so v2 engines keep
+ * working unchanged; v3 engines guard on `sdk.version >= 3` before using the new
+ * members.
+ */
+export const ENGINE_SDK_VERSION = 3;
 
 /** The generic API surface handed to every external engine's `createEngine(sdk)`. */
 export interface EngineSdk {
@@ -59,13 +73,32 @@ export interface EngineSdk {
 	/** Decode a raw address value from bytes per an encoding. */
 	readonly decodeLinkValue: typeof decodeLinkValue;
 
-	// --- struct decoding ---
+	// --- struct decoding (legacy flat `.blk`) ---
 	/** Parse a `.blk` struct definition. */
 	readonly parseBlkStruct: typeof parseBlkStruct;
 	/** Decode bytes into physical field values per a struct definition. */
 	readonly decodeStruct: typeof decodeStruct;
 	/** Byte length of a struct definition. */
 	readonly structByteLength: typeof structByteLength;
+
+	// --- rich business-struct decoding (SDK v3+) ---
+	/**
+	 * Decode payload bytes into a TREE of named typed values (arrays, nested
+	 * structs, bitfields, enums, scaling). Absolute node offsets. Never throws.
+	 */
+	readonly decodeStructRich: typeof decodeStructRich;
+	/** Compile a legacy flat `.blk` StructDef into the rich model. */
+	readonly compileBlkToRich: typeof compileBlkToRich;
+	/** Coerce untrusted JSON into a rich struct + enum catalog. */
+	readonly parseStructCatalog: typeof parseStructCatalog;
+	/** Merge catalogs (later arguments win on key conflicts). */
+	readonly mergeCatalogs: typeof mergeCatalogs;
+	/** Parse generated C source headers into a struct + enum catalog. */
+	readonly parseCStructs: typeof parseCStructs;
+	/** Parse C source with diagnostics for unresolved macros / types. */
+	readonly parseCStructsEx: typeof parseCStructsEx;
+	/** Parse ARXML type definitions into a struct + enum catalog. */
+	readonly arxmlStructs: typeof arxmlStructs;
 
 	// --- generic AUTOSAR config (no vendor semantics) ---
 	/** Dependency-free XML parser. */
@@ -89,6 +122,13 @@ export function createEngineSdk(): EngineSdk {
 		parseBlkStruct,
 		decodeStruct,
 		structByteLength,
+		decodeStructRich,
+		compileBlkToRich,
+		parseStructCatalog,
+		mergeCatalogs,
+		parseCStructs,
+		parseCStructsEx,
+		arxmlStructs,
 		parseXml,
 		parseEcucModule,
 	};
