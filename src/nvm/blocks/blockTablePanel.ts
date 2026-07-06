@@ -15,6 +15,8 @@ import { Disposable } from "../../dispose";
 import { HexDocument } from "../../hexDocument";
 import { HexEditorRegistry } from "../../hexEditorRegistry";
 import { blockLabel, discoverAttributeKeys, formatAttributeValue, hexOffset } from "./blockTreeModel";
+import { CustomViewService } from "../customViews/customViewService";
+import { addBlockToCustomView } from "../customViews/addToView";
 
 interface TableColumn {
 	key: string;
@@ -51,6 +53,7 @@ export class NvmBlocksTablePanel extends Disposable implements vscode.WebviewVie
 	constructor(
 		private readonly extensionUri: vscode.Uri,
 		private readonly registry: HexEditorRegistry,
+		private readonly customViews: CustomViewService,
 	) {
 		super();
 		this._register(registry.onDidChangeActiveDocument(() => this.push()));
@@ -76,10 +79,25 @@ export class NvmBlocksTablePanel extends Disposable implements vscode.WebviewVie
 					this.push();
 				} else if (msg.type === "jump" && typeof msg.offset === "number") {
 					this.jump(msg.offset);
+				} else if (msg.type === "addToView" && typeof msg.offset === "number") {
+					void this.addToView(msg.offset);
 				}
 			}),
 		);
 		webviewView.onDidDispose(() => (this.view = undefined));
+	}
+
+	/** Add the block at `offset` (and its structural family) to a custom view. */
+	private async addToView(offset: number): Promise<void> {
+		const doc = this.activeDoc;
+		if (!doc) {
+			return;
+		}
+		const blocks = this.blocks();
+		const block = blocks.find(b => b.offset === offset);
+		if (block) {
+			await addBlockToCustomView(this.customViews, doc.uri, blocks, block);
+		}
 	}
 
 	private get activeDoc(): HexDocument | undefined {
@@ -169,8 +187,9 @@ export class NvmBlocksTablePanel extends Disposable implements vscode.WebviewVie
 export function registerNvmBlocksTable(
 	extensionUri: vscode.Uri,
 	registry: HexEditorRegistry,
+	customViews: CustomViewService,
 ): vscode.Disposable[] {
-	const provider = new NvmBlocksTablePanel(extensionUri, registry);
+	const provider = new NvmBlocksTablePanel(extensionUri, registry, customViews);
 	return [
 		vscode.window.registerWebviewViewProvider(NvmBlocksTablePanel.viewType, provider),
 		provider,

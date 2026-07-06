@@ -18,6 +18,7 @@ import {
 	InspectorLocation,
 	MessageHandler,
 	MessageType,
+	NvmBlockInfo,
 	PasteMode,
 	ToWebviewMessage,
 } from "../shared/protocol";
@@ -29,6 +30,8 @@ import { disposeAll } from "./dispose";
 import { HexDocument } from "./hexDocument";
 import { HexEditorRegistry } from "./hexEditorRegistry";
 import { AnnotationService } from "./nvm/annotations/annotationService";
+import { CustomViewService } from "./nvm/customViews/customViewService";
+import { addBlockToCustomView } from "./nvm/customViews/addToView";
 import { EngineManager } from "./nvm/engines/engineManager";
 import {
 	applyPalette,
@@ -70,10 +73,18 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 		dataInspectorView: DataInspectorView,
 		registry: HexEditorRegistry,
 		annotations: AnnotationService,
+		customViews: CustomViewService,
 	): vscode.Disposable {
 		return vscode.window.registerCustomEditorProvider(
 			HexEditorProvider.viewType,
-			new HexEditorProvider(context, telemetryReporter, dataInspectorView, registry, annotations),
+			new HexEditorProvider(
+				context,
+				telemetryReporter,
+				dataInspectorView,
+				registry,
+				annotations,
+				customViews,
+			),
 			{
 				supportsMultipleEditorsPerDocument: false,
 			},
@@ -88,6 +99,7 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 		private readonly _dataInspectorView: DataInspectorView,
 		private readonly _registry: HexEditorRegistry,
 		private readonly _annotations: AnnotationService,
+		private readonly _customViews: CustomViewService,
 	) {}
 
 	/** Lazily-created manager for installed external engine packs. */
@@ -803,6 +815,8 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 				}
 				// Push any saved annotations (bookmarks / tags / notes) for this dump.
 				void this.pushAnnotations(messaging, document);
+				// Push the custom-view refs (for the decoded-tree "+" menu).
+				void this.pushCustomViews(messaging, document);
 				return {
 					type: MessageType.ReadyResponse,
 					initialOffset: document.baseAddress,
@@ -909,6 +923,99 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 			case MessageType.NvmAnnotationCommand:
 				await this.handleAnnotationCommand(messaging, document, message.command);
 				break;
+			case MessageType.NvmCustomViewCommand:
+				await this.handleCustomViewCommand(messaging, document, message.command);
+				break;
+		}
+	}
+
+	/** Push the dump's custom-view refs to the webview (for the "+" menu). */
+	private async pushCustomViews(
+		messaging: ExtensionHostMessageHandler,
+		document: HexDocument,
+	): Promise<void> {
+		try {
+			const blocks = this._registry.getNvmBlocks(document);
+			const views = await this._customViews.listForEditor(document.uri, blocks);
+			messaging.sendEvent({ type: MessageType.SetNvmCustomViews, views });
+		} catch (e) {
+			console.warn("Failed to push NVM custom views:", e);
+		}
+	}
+
+	/** Apply a custom-view mutation requested by the webview, then re-push. */
+	private async handleCustomViewCommand(
+		messaging: ExtensionHostMessageHandler,
+		document: HexDocument,
+		command: import("../shared/protocol").NvmCustomViewCommand,
+	): Promise<void> {
+		try {
+			const uri = document.uri;
+			switch (command.kind) {
+				case "addBlock":
+					await this.addBlockToView(document, command.viewId, command.blockId, command.by);
+					break;
+				case "createView":
+					await this._customViews.createView(uri, command.name);
+					break;
+				case "renameView": {
+					const name = await vscode.window.showInputBox({
+						title: vscode.l10n.t("Rename custom view"),
+						prompt: vscode.l10n.t("New view name"),
+					});
+					if (name !== undefined) {
+						await this._customViews.renameView(uri, command.viewId, name);
+					}
+					break;
+				}
+				case "deleteView":
+					await this._customViews.deleteView(uri, command.viewId);
+					break;
+				case "deleteGroup":
+					await this._customViews.deleteGroup(uri, command.viewId, command.groupKey);
+					break;
+				case "promoteToTemplate":
+					await this._customViews.promoteToTemplate(uri, command.viewId);
+					break;
+			}
+			await this.pushCustomViews(messaging, document);
+		} catch (e) {
+			void vscode.window.showErrorMessage(
+				`NVM custom view failed: ${e instanceof Error ? e.message : String(e)}`,
+			);
+		}
+	}
+
+	/**
+	 * Add a whole block (and its structurally-matching family) to a custom view.
+	 * Shared by every "Add to Custom View" entry point (Blocks Table row, Blocks
+	 * tree context menu, Data Inspector button). `viewId` may be "__new__" to
+	 * prompt for a target view. The block is located by id, so the fingerprint is
+	 * computed from the authoritative decoded tree host-side.
+	 */
+	public async addBlockToView(
+		document: HexDocument,
+		viewId: string,
+		blockId: string,
+		by?: "fingerprint" | "identity" | "id",
+	): Promise<void> {
+		const blocks = this._registry.getNvmBlocks(document) as NvmBlockInfo[];
+		const block = blocks.find(b => b.id === blockId);
+		if (!block) {
+			return;
+		}
+		const added = await addBlockToCustomView(
+			this._customViews,
+			document.uri,
+			blocks,
+			block,
+			viewId,
+			by ?? "fingerprint",
+		);
+		if (added) {
+			for (const messaging of this._registry.getMessagingByUri(document.uri)) {
+				void this.pushCustomViews(messaging, document);
+			}
 		}
 	}
 

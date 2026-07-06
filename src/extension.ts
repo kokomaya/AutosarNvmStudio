@@ -21,6 +21,8 @@ import { parseArxmlFile } from "./nvm/arxmlParser";
 import { mapBlocksToBuffer } from "./nvm/blockMapper";
 import { registerNvmBlocksTable } from "./nvm/blocks/blockTablePanel";
 import { registerNvmBlocksView } from "./nvm/blocks/nvmBlocksView";
+import { CustomViewService } from "./nvm/customViews/customViewService";
+import { registerNvmCustomViewsPanel } from "./nvm/customViews/customViewPanel";
 import { registerEngineCommands } from "./nvm/engines/engineCommands";
 import { registerReportCommands } from "./nvm/report/reportCommands";
 import { registerReportPreview } from "./nvm/report/reportPanel";
@@ -174,10 +176,16 @@ export async function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(loadNvmArxmlCommand);
 	context.subscriptions.push(...registerEngineCommands(context));
 	const annotationService = new AnnotationService(context);
+	const customViewService = new CustomViewService(context);
 	context.subscriptions.push(...registerAnnotationCommands(registry, annotationService));
 	context.subscriptions.push(...registerNvmStudioView(registry, annotationService));
 	context.subscriptions.push(...registerNvmBlocksView(registry, context.workspaceState));
-	context.subscriptions.push(...registerNvmBlocksTable(context.extensionUri, registry));
+	context.subscriptions.push(
+		...registerNvmBlocksTable(context.extensionUri, registry, customViewService),
+	);
+	context.subscriptions.push(
+		...registerNvmCustomViewsPanel(context.extensionUri, registry, customViewService),
+	);
 	context.subscriptions.push(...registerReportCommands(registry, annotationService));
 	context.subscriptions.push(...registerReportPreview(registry, annotationService));
 	context.subscriptions.push(...registerLmTools(registry, annotationService));
@@ -188,7 +196,14 @@ export async function activate(context: vscode.ExtensionContext) {
 		}),
 	);
 	context.subscriptions.push(
-		HexEditorProvider.register(context, telemetryReporter, dataInspectorProvider, registry, annotationService),
+		HexEditorProvider.register(
+			context,
+			telemetryReporter,
+			dataInspectorProvider,
+			registry,
+			annotationService,
+			customViewService,
+		),
 	);
 }
 

@@ -85,7 +85,26 @@ export const DataInspectorAside: React.FC<{ onInspecting?(isInspecting: boolean)
 			{/* Show NVM block details if one is selected */}
 			{selectedBlock ? (
 				<div className={style.nvmInspector}>
-					<h3>{selectedBlock.name ?? selectedBlock.id}</h3>
+					<div className={style.nvmBlockHeader}>
+						<h3>{selectedBlock.name ?? selectedBlock.id}</h3>
+						{selectedBlock.decoded && selectedBlock.decoded.length > 0 && (
+							<button
+								className={style.nvmAddToViewBtn}
+								title="Add this block (and structurally-matching blocks) to a custom view"
+								onClick={() =>
+									select.sendCustomViewCommand({
+										kind: "addBlock",
+										viewId: "__new__",
+										blockId: selectedBlock.id,
+										by: "fingerprint",
+									})
+								}
+							>
+								<AddIcon />
+								Add to Custom View
+							</button>
+						)}
+					</div>
 					<dl>
 						<dt>Offset</dt>
 						<dd>{selectedBlock.offset}</dd>

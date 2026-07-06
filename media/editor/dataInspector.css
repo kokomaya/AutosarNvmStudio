@@ -83,6 +83,44 @@
 	text-overflow: ellipsis;
 }
 
+/* Block header row: name + "Add to Custom View" action. */
+.nvmBlockHeader {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+}
+
+.nvmBlockHeader h3 {
+	margin: 0 0 0.5rem 0;
+}
+
+/* Block-level "add whole block to a custom view" button. */
+.nvmAddToViewBtn {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 2px 8px;
+	font-size: 0.85em;
+	color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+	background: var(--vscode-button-secondaryBackground, var(--vscode-toolbar-hoverBackground));
+	border: none;
+	border-radius: 2px;
+	cursor: pointer;
+	white-space: nowrap;
+	flex: 0 0 auto;
+}
+
+.nvmAddToViewBtn:hover {
+	background: var(--vscode-button-secondaryHoverBackground, var(--vscode-toolbar-hoverBackground));
+}
+
+.nvmAddToViewBtn svg {
+	width: 12px;
+	height: 12px;
+	fill: currentColor;
+}
+
 .nvmDecodedValue {
 	color: var(--vscode-debugTokenExpression-number, inherit);
 	text-align: right;

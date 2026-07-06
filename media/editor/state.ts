@@ -692,6 +692,43 @@ export const sendAnnotationCommand = (
 	messageHandler.sendEvent({ type: MessageType.NvmAnnotationCommand, command });
 };
 
+/**
+ * Custom-view refs pushed from the extension (id + name + layout). Used by the
+ * decoded-tree "+" affordance to list existing views to add a field to. Captured
+ * eagerly (like blocks/annotations) so the startup push is never lost to a race.
+ */
+type NvmCustomViewRef = import("../../shared/protocol").NvmCustomViewRef;
+let latestNvmCustomViews: NvmCustomViewRef[] = [];
+const nvmCustomViewListeners = new Set<(v: NvmCustomViewRef[]) => void>();
+registerHandler(MessageType.SetNvmCustomViews, (msg: any) => {
+	latestNvmCustomViews = msg.views ?? [];
+	for (const listener of nvmCustomViewListeners) {
+		listener(latestNvmCustomViews);
+	}
+});
+
+export const nvmCustomViewsListAtom = atom<NvmCustomViewRef[]>({
+	key: "nvmCustomViewsListAtom",
+	default: [],
+	effects_UNSTABLE: [
+		fx => {
+			fx.setSelf(latestNvmCustomViews);
+			const listener = (v: NvmCustomViewRef[]) => fx.setSelf(v);
+			nvmCustomViewListeners.add(listener);
+			return () => {
+				nvmCustomViewListeners.delete(listener);
+			};
+		},
+	],
+});
+
+/** Send a mutation request for custom views to the extension host. */
+export const sendCustomViewCommand = (
+	command: import("../../shared/protocol").NvmCustomViewCommand,
+): void => {
+	messageHandler.sendEvent({ type: MessageType.NvmCustomViewCommand, command });
+};
+
 
 const rawDataPages = selectorFamily({
 	key: "rawDataPages",

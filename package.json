@@ -249,6 +249,12 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "hexEditor.nvm.customViews.addBlock",
+        "category": "NVM",
+        "title": "Add Block to Custom View",
+        "icon": "$(add)"
+      },
+      {
         "command": "hexEditor.nvm.openNoteNode",
         "category": "NVM",
         "title": "Open Note",
@@ -339,6 +345,11 @@
           "type": "webview",
           "id": "hexEditor.nvmBlocksTable",
           "name": "Blocks Table"
+        },
+        {
+          "type": "webview",
+          "id": "hexEditor.nvmCustomViews",
+          "name": "Custom Views"
         },
         {
           "id": "hexEditor.nvmStudio",
@@ -518,6 +529,16 @@
         }
       ],
       "view/item/context": [
+        {
+          "command": "hexEditor.nvm.customViews.addBlock",
+          "when": "view == hexEditor.nvmBlocks && viewItem == nvmBlock",
+          "group": "inline@1"
+        },
+        {
+          "command": "hexEditor.nvm.customViews.addBlock",
+          "when": "view == hexEditor.nvmBlocks && viewItem == nvmBlock",
+          "group": "1_view@1"
+        },
         {
           "command": "hexEditor.nvm.openNoteNode",
           "when": "view == hexEditor.nvmStudio && viewItem == note",

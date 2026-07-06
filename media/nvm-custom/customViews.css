@@ -1,0 +1,166 @@
+/* Copyright (c) Microsoft Corporation. Licensed under the MIT license. */
+
+body {
+	padding: 0;
+	margin: 0;
+	color: var(--vscode-foreground);
+	font-family: var(--vscode-font-family);
+	font-size: var(--vscode-font-size);
+}
+
+#root {
+	display: flex;
+	flex-direction: column;
+	height: 100vh;
+}
+
+.toolbar {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 6px 8px;
+	position: sticky;
+	top: 0;
+	background: var(--vscode-sideBar-background);
+	z-index: 1;
+}
+
+.toolbar .spacer {
+	flex: 1;
+}
+
+.toolbar select {
+	flex: 1;
+	min-width: 0;
+	box-sizing: border-box;
+	padding: 3px 6px;
+	color: var(--vscode-dropdown-foreground);
+	background: var(--vscode-dropdown-background);
+	border: 1px solid var(--vscode-dropdown-border, transparent);
+	border-radius: 2px;
+	outline: none;
+}
+
+.toolbar select:focus {
+	border-color: var(--vscode-focusBorder);
+}
+
+.icon-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 22px;
+	height: 22px;
+	padding: 0;
+	border: none;
+	border-radius: 3px;
+	background: transparent;
+	color: inherit;
+	cursor: pointer;
+	opacity: 0.8;
+}
+
+.icon-btn:hover:not(:disabled) {
+	opacity: 1;
+	background: var(--vscode-toolbar-hoverBackground);
+}
+
+.icon-btn:disabled {
+	opacity: 0.35;
+	cursor: default;
+}
+
+.status {
+	padding: 2px 8px 6px;
+	opacity: 0.7;
+	font-size: 0.9em;
+}
+
+#table-wrap {
+	flex: 1;
+	overflow: auto;
+	padding-bottom: 8px;
+}
+
+.group {
+	margin-bottom: 10px;
+}
+
+.group-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	padding: 4px 8px;
+	position: sticky;
+	top: 0;
+	background: var(--vscode-sideBar-background);
+	z-index: 1;
+}
+
+.group-title {
+	font-weight: 600;
+	font-size: 0.9em;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.group-del {
+	width: 18px;
+	height: 18px;
+	padding: 0;
+	line-height: 1;
+	border: none;
+	border-radius: 3px;
+	background: transparent;
+	color: inherit;
+	cursor: pointer;
+	opacity: 0.6;
+	flex: 0 0 auto;
+}
+
+.group-del:hover {
+	opacity: 1;
+	background: var(--vscode-toolbar-hoverBackground);
+}
+
+.group-empty {
+	padding: 2px 8px 6px;
+	opacity: 0.6;
+	font-size: 0.85em;
+	font-style: italic;
+}
+
+table {
+	border-collapse: collapse;
+	width: 100%;
+	white-space: nowrap;
+}
+
+thead th {
+	text-align: left;
+	padding: 4px 8px;
+	background: var(--vscode-sideBarSectionHeader-background);
+	border-bottom: 1px solid var(--vscode-panel-border, transparent);
+	user-select: none;
+}
+
+tbody td {
+	padding: 3px 8px;
+	border-bottom: 1px solid var(--vscode-panel-border, transparent);
+}
+
+tbody td.block-cell {
+	cursor: pointer;
+	font-weight: 500;
+}
+
+tbody td.clickable {
+	cursor: pointer;
+	color: var(--vscode-textLink-foreground);
+}
+
+tbody tr:hover {
+	background: var(--vscode-list-hoverBackground);
+}

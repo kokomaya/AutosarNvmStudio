@@ -27,6 +27,7 @@ export const enum MessageType {
 	DeleteAccepted,
 	TriggerCopyAs,
 	SetNvmAnnotations,
+	SetNvmCustomViews,
 	//#endregion
 	//#region from webview
 	ReadyRequest,
@@ -42,6 +43,7 @@ export const enum MessageType {
 	DoPaste,
 	DoCopy,
 	NvmAnnotationCommand,
+	NvmCustomViewCommand,
 	//#endregion
 }
 
@@ -275,6 +277,49 @@ export interface NvmAnnotationCommandMessage {
 	command: NvmAnnotationCommand;
 }
 
+// --- NVM custom views (user-composable) ---
+
+/** A lightweight descriptor of a custom view, pushed to the editor webview so
+ * the decoded-tree "+" menu can list existing views to add a field to. */
+export interface NvmCustomViewRef {
+	id: string;
+	name: string;
+}
+
+export interface SetNvmCustomViewsMessage {
+	type: MessageType.SetNvmCustomViews;
+	views: NvmCustomViewRef[];
+}
+
+/**
+ * A mutation the webview asks the host to perform on custom views. `addBlock`
+ * carries a `viewId` of the target view, or the `__new__` sentinel to prompt
+ * for a new view name host-side (mirrors the tag `__prompt__` pattern). The
+ * block is referenced by its generic `id`; the host looks it up, computes a
+ * structural fingerprint, and adds a group so all structurally-matching blocks
+ * join at once.
+ */
+export type NvmCustomViewCommand =
+	| {
+			kind: "addBlock";
+			/** Target view id, or "__new__" to create a new view first (host prompts). */
+			viewId: string;
+			/** The block's generic id (host resolves it to compute the group selector). */
+			blockId: string;
+			/** How structurally-matching blocks are grouped (default: fingerprint). */
+			by?: "fingerprint" | "identity" | "id";
+	  }
+	| { kind: "createView"; name: string }
+	| { kind: "renameView"; viewId: string }
+	| { kind: "deleteView"; viewId: string }
+	| { kind: "deleteGroup"; viewId: string; groupKey: string }
+	| { kind: "promoteToTemplate"; viewId: string };
+
+export interface NvmCustomViewCommandMessage {
+	type: MessageType.NvmCustomViewCommand;
+	command: NvmCustomViewCommand;
+}
+
 export interface SetEditModeMessage {
 	type: MessageType.SetEditMode;
 	mode: HexDocumentEditOp.Insert | HexDocumentEditOp.Replace;
@@ -394,6 +439,7 @@ export type ToWebviewMessage =
 	| ReloadMessage
 	| SetNvmBlocksMessage
 	| SetNvmAnnotationsMessage
+	| SetNvmCustomViewsMessage
 	| GoToOffsetMessage
 	| SetEditsMessage
 	| SetFocusedByteMessage
@@ -490,7 +536,8 @@ export type FromWebviewMessage =
 	| PasteMessage
 	| CopyMessage
 	| RequestDeletesMessage
-	| NvmAnnotationCommandMessage;
+	| NvmAnnotationCommandMessage
+	| NvmCustomViewCommandMessage;
 
 export type ExtensionHostMessageHandler = MessageHandler<ToWebviewMessage, FromWebviewMessage>;
 export type WebviewMessageHandler = MessageHandler<FromWebviewMessage, ToWebviewMessage>;

@@ -16,4 +16,5 @@ export * from "./structRich";
 export * from "./structFormat";
 export * from "./cstruct";
 export * from "./arxmlStructs";
+export * from "./customView";
 
