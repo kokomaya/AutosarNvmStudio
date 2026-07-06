@@ -1,62 +1,80 @@
-# Contributing to Visual Studio Code Hex Editor
-There are many ways to contribute to the Visual Studio Code Hex Editor project: logging bugs, submitting pull requests, reporting issues, and creating suggestions.
+# Contributing
 
-After cloning and building the repo, check out the [issues list](https://github.com/microsoft/vscode-hexeditor/issues?q=is%3Aissue+is%3Aopen+).
+This is an internal fork of Microsoft's `vscode-hexeditor`, extended into NVM Studio (see
+[README.md](README.md)). It is not distributed on the VS Code Marketplace and does not go
+through the upstream project's CLA/PR process — the notes below are for working on this repo
+directly.
 
-
-### Getting the sources
-
-First, fork the VS Code Hex Editor repository so that you can make a pull request. Then, clone your fork locally:
-
-```
-git clone https://github.com/<<<your-github-account>>>/vscode-hexeditor.git
-```
-
-Occasionally you will want to merge changes in the upstream repository (the official code repo) with your fork.
+## Getting the sources
 
 ```
-cd vscode-hexeditor
-git checkout main
-git pull https://github.com/microsoft/vscode-hexeditor.git main
-```
-
-Manage any merge conflicts, commit them, and then push them to your fork.
-
-## Prerequisites
-
-In order to download necessary tools, clone the repository, and install dependencies through npm, you need network access.
-
-You'll need the following tools:
-
-- [Git](https://git-scm.com)
-- [Node.JS](https://nodejs.org/en/), **x64**, version `>= 12.x`
-
-```
+git clone <this repo's URL>
 cd vscode-hexeditor
 npm install
 ```
 
-## Build and Run
+Prerequisites: [Git](https://git-scm.com), [Node.js](https://nodejs.org/en/) (x64, `>= 12.x`).
 
-After cloning the extension and running `npm install` execute `npm run watch` to initiate esbuild's file watcher and then use the debugger in VS Code to execute "Run Extension".
+## Build and run
 
-run `npm run package:vsix` to build vsix installable package.
+```
+npm run watch          # esbuild watcher
+```
 
-### Linting
-We use [eslint](https://eslint.org/) for linting our sources. You can run eslint across the sources by calling `npm run lint` from a terminal or command prompt.
-To lint the source as you make changes you can install the [eslint extension](https://marketplace.visualstudio.com/items?itemName=dbaeumer.vscode-eslint).
+Then use the VS Code debugger to run "Run Extension" (F5) — this launches an Extension
+Development Host with the extension loaded from `dist/`. After any source change, rebuild
+(`npm run watch` picks it up automatically) and reload the dev host window
+("Developer: Reload Window") to see the change; the marketplace-installed hex editor, if you also
+have it, does **not** pick up local changes.
 
-## Work Branches
-Even if you have push rights on the Microsoft/vscode-hexeditor repository, you should create a personal fork and create feature branches there when you need them. This keeps the main repository clean and your personal workflow cruft out of sight.
+```
+npm run compile        # one-shot type-check + build (what `vscode:prepublish` runs)
+npm run package:vsix   # compile + package a .vsix for internal distribution
+```
 
-## Pull Requests
-Before we can accept a pull request from you, you'll need to sign a [Contributor License Agreement (CLA)](https://cla.opensource.microsoft.com/microsoft/vscode-hexeditor). It is an automated process and you only need to do it once.
+See [CLAUDE.md](CLAUDE.md) for a fuller architecture overview and the NVM CLI
+(`npm run nvmcli:build`) used for fast iteration without the editor UI.
 
-To enable us to quickly review and accept your pull requests, always create one pull request per issue and [link the issue in the pull request](https://github.com/blog/957-introducing-issue-mentions). Never merge multiple requests in one unless they have the same root cause. Be sure to keep code changes as small as possible. Avoid pure formatting changes to code that has not been modified otherwise. Pull requests should contain tests whenever possible.
+### Linting and formatting
 
-## Suggestions
-We're also interested in your feedback for the future of the hex editor. You can submit a suggestion or feature request through the issue tracker. To make this process more effective, we're asking that these include more information to help define them more clearly.
+```
+npm run lint   # eslint src
+npm run fmt    # prettier (src, media, shared) + eslint --fix
+```
 
-## Discussion Etiquette
+Install the [ESLint extension](https://marketplace.visualstudio.com/items?itemName=dbaeumer.vscode-eslint)
+to lint as you type.
 
-In order to keep the conversation clear and transparent, please limit discussion to English and keep things on topic with the issue. Be considerate to others and try to be courteous and professional at all times.
+### Testing
+
+```
+npm test
+```
+
+Runs `tsc --noEmit`, builds, then runs the suite listed explicitly in `src/test/index.ts` under
+`@vscode/test-electron`. Note: this can be blocked by a pre-existing
+`@vscode/extension-telemetry` named-import error in unmodified files — `npx tsc --noEmit` and
+`npm run nvmcli:build` are reliable fallbacks for a quick sanity check.
+
+## Working on NVM Studio specifically
+
+The NVM core is designed to stay **vendor-blind** — new vendor/layout support belongs in a
+`*.nvmlayout.json` descriptor or a new adapter/engine, never as vendor-specific logic in
+`shared/` or the layout registry core. Before changing layout, capability, or AI-tool code, read:
+
+- [docs/nvm-context.md](docs/nvm-context.md) — project context, verified format facts, status
+- [docs/nvm-layout-providers.md](docs/nvm-layout-providers.md) — layout provider architecture
+- [docs/nvm-capabilities.md](docs/nvm-capabilities.md) — the vendor-blind capability boundary
+- [docs/nvm-ai-capabilities.md](docs/nvm-ai-capabilities.md) — the Copilot/LM-tools boundary
+
+## Branches and commits
+
+Use feature branches off `main` (or `develop/*` for longer-lived work-in-progress, matching the
+current branch naming). Keep commits scoped and describe *why* a change was made, not just what
+changed. Squash noisy WIP history before merging where practical.
+
+## Pull requests
+
+Keep PRs focused — one topic per PR — and include a short description of the motivation and any
+manual verification performed (this repo has no external CI beyond `.github/workflows/pr.yml`,
+which runs `npm run compile`, `npm run lint`, and `npm test` on PRs against `main`).

@@ -1,41 +1,37 @@
-<!-- BEGIN MICROSOFT SECURITY.MD V0.0.5 BLOCK -->
+# Security
 
-## Security
+This repository is an internal/personal fork of Microsoft's `vscode-hexeditor`, used and
+distributed internally (not published to the VS Code Marketplace). It is **not** covered by
+Microsoft's public MSRC vulnerability disclosure process described for the upstream project.
 
-Microsoft takes the security of our software products and services seriously, which includes all source code repositories managed through our GitHub organizations, which include [Microsoft](https://github.com/Microsoft), [Azure](https://github.com/Azure), [DotNet](https://github.com/dotnet), [AspNet](https://github.com/aspnet), [Xamarin](https://github.com/xamarin), and [our GitHub organizations](https://opensource.microsoft.com/).
+## Reporting a security issue
 
-If you believe you have found a security vulnerability in any Microsoft-owned repository that meets [Microsoft's definition of a security vulnerability](https://docs.microsoft.com/en-us/previous-versions/tn-archive/cc751383(v=technet.10)), please report it to us as described below.
+If you find a security issue in this fork (for example, in the NVM Studio external-engine
+loading path, dependency-file auto-discovery, or ARXML/config parsing), report it directly to
+the repository maintainer rather than filing a public issue. Include:
 
-## Reporting Security Issues
+- Affected file(s)/commit
+- Steps to reproduce and expected vs. actual behavior
+- Impact (e.g. what a malicious workspace/config/dump/engine script could do)
 
-**Please do not report security vulnerabilities through public GitHub issues.**
+## Notes on the extension's trust model
 
-Instead, please report them to the Microsoft Security Response Center (MSRC) at [https://msrc.microsoft.com/create-report](https://msrc.microsoft.com/create-report).
+Some NVM Studio features intentionally execute workspace-provided code or read
+workspace-provided files, and are gated accordingly:
 
-If you prefer to submit without logging in, send email to [secure@microsoft.com](mailto:secure@microsoft.com).  If possible, encrypt your message with our PGP key; please download it from the [Microsoft Security Response Center PGP Key page](https://www.microsoft.com/en-us/msrc/pgp-key-msrc).
+- **External layout engines** (`*.nvmlayout.json` → `engineScript`/`engine`) run arbitrary
+  JavaScript from the workspace. They only run in the desktop extension host, only in a
+  **trusted workspace**, only when `hexeditor.nvm.allowExternalEngines` is enabled, and only
+  after a one-time per-file confirmation. Set the setting to `false` to disable engines entirely.
+- **Dependency auto-discovery** (`hexeditor.nvm.workspaceRoots`) only reads files under the
+  configured roots — the extension never fetches remote files itself.
 
-You should receive a response within 24 hours. If for some reason you do not, please follow up via email to ensure we received your original message. Additional information can be found at [microsoft.com/msrc](https://www.microsoft.com/msrc).
+If you find a way to bypass any of these gates, treat it as a security issue and report it as
+above.
 
-Please include the requested information listed below (as much as you can provide) to help us better understand the nature and scope of the possible issue:
+## Upstream
 
-  * Type of issue (e.g. buffer overflow, SQL injection, cross-site scripting, etc.)
-  * Full paths of source file(s) related to the manifestation of the issue
-  * The location of the affected source code (tag/branch/commit or direct URL)
-  * Any special configuration required to reproduce the issue
-  * Step-by-step instructions to reproduce the issue
-  * Proof-of-concept or exploit code (if possible)
-  * Impact of the issue, including how an attacker might exploit the issue
-
-This information will help us triage your report more quickly.
-
-If you are reporting for a bug bounty, more complete reports can contribute to a higher bounty award. Please visit our [Microsoft Bug Bounty Program](https://microsoft.com/msrc/bounty) page for more details about our active programs.
-
-## Preferred Languages
-
-We prefer all communications to be in English.
-
-## Policy
-
-Microsoft follows the principle of [Coordinated Vulnerability Disclosure](https://www.microsoft.com/en-us/msrc/cvd).
-
-<!-- END MICROSOFT SECURITY.MD BLOCK -->
+For vulnerabilities that also affect the original, unmodified `vscode-hexeditor` (the base
+custom-editor/webview code untouched by this fork), consider also reporting to Microsoft via
+[MSRC](https://msrc.microsoft.com/create-report), per the
+[upstream project's policy](https://github.com/microsoft/vscode-hexeditor/security/policy).

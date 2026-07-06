@@ -1,23 +1,29 @@
-A custom editor extension for Visual Studio Code which provides a hex editor for viewing and manipulating files in their raw hexadecimal representation.
+# NVM Studio (Hex Editor fork)
 
-## Features
+An internal fork of Microsoft's [vscode-hexeditor](https://github.com/microsoft/vscode-hexeditor)
+extended into a config-driven, vendor-agnostic, AI-assisted tool for analyzing AUTOSAR NVM
+(non-volatile memory) dumps — while keeping the original general-purpose hex editor intact.
 
-- Opening files as hex
-- A data inspector for viewing the hex values as various different data types
+Not published to the VS Code Marketplace; install the built `.vsix` for internal use (see
+[CONTRIBUTING.md](CONTRIBUTING.md)).
+
+## Base hex editor features
+
+- Opening files as hex (`.bin`, S-record `.mot`/`.s19`/…, Intel HEX, or any file)
+- A data inspector for viewing hex values as various data types
 - Editing with undo, redo, copy, and paste support
 - Find and replace
+- An experimental diff mode (`Compare Selected in HexEditor`)
 
 ![User opens a text file named release.txt and switches to the hex editor via command palette. The user then navigates and edits the document](https://raw.githubusercontent.com/microsoft/vscode-hexeditor/main/hex-editor.gif)
 
-## How to Use
+### How to open a file
 
-There are three ways to open a file in the hex editor:
+1. Right click a file → Open With → Hex Editor
+2. Command palette (<kbd>F1</kbd>) → Open File using Hex Editor
+3. Command palette (<kbd>F1</kbd>) → Reopen With → Hex Editor
 
-1. Right click a file -> Open With -> Hex Editor
-2. Trigger the command palette (<kbd>F1</kbd>) -> Open File using Hex Editor
-3. Trigger the command palette (<kbd>F1</kbd>) -> Reopen With -> Hex Editor
-
-The hex editor can be set as the default editor for certain file types by using the `workbench.editorAssociations` setting. For example, this would associate all files with extensions `.hex` and `.ini` to use the hex editor by default:
+Associate file types with the hex editor by default via `workbench.editorAssociations`:
 
 ```json
 "workbench.editorAssociations": {
@@ -26,12 +32,64 @@ The hex editor can be set as the default editor for certain file types by using 
 },
 ```
 
-## Configuring the Data Inspector
+### Configuring the Data Inspector
 
-By default, the data inspector is shown just to the right of the data grid (or decoded text if enabled), but it can be configured (via the `hexeditor.inspectorType` setting) to instead show up while hovering over a data cell.
+By default the data inspector shows to the right of the data grid, but `hexeditor.inspectorType`
+can switch it to a hover popup, or a dedicated activity-bar sidebar entry (combine with
+`hexeditor.dataInspector.autoReveal` to avoid revealing the sidebar automatically).
 
-Another option is to give the data inspector a dedicated activity bar entry on the left (by setting `hexeditor.inspectorType` to `sidebar`) that appears when the hex editor is opened, causing the explorer or whatever sidebar you had opened to be hidden. If preferred, the hex editor view can be dragged into another view by dragging the ⬡ icon onto one of the other views. This can be used in combination with the `hexeditor.dataInspector.autoReveal` setting to avoid revealing the sidebar containing the data inspector altogether.
+## NVM Studio
+
+The **NVM Studio** activity-bar container adds AUTOSAR NVM dump analysis on top of the hex
+editor. The core is deliberately **vendor-blind and config-driven** — it has zero built-in
+knowledge of any vendor's on-flash layout; everything comes from `*.nvmlayout.json` descriptors,
+declared source files (ARXML, `Fee_Lcfg.c`, …), and optional pluggable engines. See
+[docs/nvm-layout-providers.md](docs/nvm-layout-providers.md) for the full architecture and a
+config walkthrough, and [docs/nvm-context.md](docs/nvm-context.md) for background/status.
+
+Highlights:
+
+- **Layout resolution** — drop a `*.nvmlayout.json` next to a dump (or in `conf/`) to opt in to
+  block/field rendering: static offsets, a declarative structured profile, or a full parsing
+  engine (e.g. the bundled Vector MICROSAR FEE V3 link-table engine), with no vendor logic in
+  the extension itself.
+- **Blocks Tree / Blocks Table** — browse parsed blocks, filter, arrange by sector/write
+  time/identity, and configure visible columns.
+- **Data Inspector byte explain** — selection-driven per-byte coloring plus a breakdown of which
+  block/field/value a byte belongs to.
+- **Custom Views** — group blocks that share a decoded structure (or a name family) into ad-hoc
+  comparison tables, from the Blocks Table, the Blocks tree, or the Data Inspector.
+- **Annotations** — bookmarks, tags, and rich notes anchored to a block or byte range, stored as
+  a portable sidecar file next to the dump or in workspace state
+  (`hexeditor.nvm.annotationStorage`).
+- **Report export** — combine parsed blocks with your bookmarks/tags/notes into a Markdown
+  report, with a live preview panel.
+- **Ask NVM AI** — a `@nvm` chat participant plus nine Language Model Tools
+  (`#nvmListBlocks`, `#nvmSearchBlocks`, `#nvmAnalyzeBlock`, `#nvmGetDecoded`, `#nvmReadBytes`,
+  `#nvmListAnnotations`, `#nvmCreateNote`, `#nvmExportReport`, `#nvmRiskDetection`) so Copilot (or
+  any LM-tool-aware agent) can query the active dump. See
+  [docs/nvm-ai-capabilities.md](docs/nvm-ai-capabilities.md).
+- **Engine management** — install/manage external layout engines (`NVM: Install Engine…`,
+  `NVM: Manage Engines…`), gated behind Workspace Trust, the
+  `hexeditor.nvm.allowExternalEngines` setting, and a per-file confirmation.
+- **Automatic dependency discovery** — point `hexeditor.nvm.workspaceRoots` at one or more
+  folders and the extension recursively finds dependency files a descriptor declares (e.g.
+  `Fee_Lcfg.c`, `Dem_Lcfg.h`, `*.arxml`); ambiguous duplicate names prompt you to choose, and the
+  choice is remembered (`hexeditor.nvm.fileChoices`, reselect via `NVM: Reselect Dependency File`).
+
+### NVM settings
+
+| Setting | Purpose |
+|---|---|
+| `hexeditor.autoLoadArxml` | Auto-load an ARXML file from the dump's folder (legacy fallback when no `*.nvmlayout.json` matches). |
+| `hexeditor.nvm.allowExternalEngines` | Master switch for running layout engine scripts (desktop + trusted workspace only). |
+| `hexeditor.nvm.annotationStorage` | `sidecar` (portable file next to the dump) or `workspaceState`. |
+| `hexeditor.nvm.workspaceRoots` | Root folders searched recursively for dependency files. |
+| `hexeditor.nvm.fileChoices` | Remembered dependency-file disambiguation choices (auto-managed). |
 
 ## Known Issues
 
-To track existing issues or report a new one, please visit the GitHub Issues page at https://github.com/microsoft/vscode-hexeditor/issues
+This is an internal fork without a public issue tracker; report problems to the maintainer
+directly (see [SECURITY.md](SECURITY.md) for vulnerabilities specifically). For issues in the
+*upstream* general-purpose hex editor, the original project tracks them at
+https://github.com/microsoft/vscode-hexeditor/issues.
