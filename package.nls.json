@@ -1,6 +1,6 @@
 {
-	"name": "Hex Editor",
-	"description": "Allows viewing and editing files in a hex editor",
+	"name": "NVM Studio",
+	"description": "View and edit files in hex, with AUTOSAR NVM (non-volatile memory) dump analysis (NVM Studio)",
 
 	"hexeditor.inspectorType": "Where the data inspector should be shown in the hex editor.",
 	"hexeditor.maxFileSize": "The max file size (in MB) that the editor will try to open before warning you.",
