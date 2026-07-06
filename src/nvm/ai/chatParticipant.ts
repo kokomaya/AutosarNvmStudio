@@ -140,11 +140,16 @@ function buildMessages(system: string, user: string): unknown[] {
 	return [{ role: "user", content: `${system}\n\n${user}` }];
 }
 
-/** Try to open the chat view with a starting query. Returns false if no API. */
+/**
+ * Try to open the chat view with a starting query. Returns false if no API.
+ * `isPartialQuery: true` places the text in the chat input box WITHOUT
+ * auto-submitting it, so the user can edit the prompt before sending (VS Code
+ * only calls `setInput`, not `acceptInput`, for a partial query).
+ */
 async function tryOpenChat(query: string): Promise<boolean> {
 	for (const cmd of ["workbench.action.chat.open", "workbench.action.chat.openInSidebar"]) {
 		try {
-			await vscode.commands.executeCommand(cmd, { query });
+			await vscode.commands.executeCommand(cmd, { query, isPartialQuery: true });
 			return true;
 		} catch {
 			// try the next command id

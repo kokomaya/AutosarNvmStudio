@@ -40,6 +40,8 @@ npm install
 
 After cloning the extension and running `npm install` execute `npm run watch` to initiate esbuild's file watcher and then use the debugger in VS Code to execute "Run Extension".
 
+run `npm run package:vsix` to build vsix installable package.
+
 ### Linting
 We use [eslint](https://eslint.org/) for linting our sources. You can run eslint across the sources by calling `npm run lint` from a terminal or command prompt.
 To lint the source as you make changes you can install the [eslint extension](https://marketplace.visualstudio.com/items?itemName=dbaeumer.vscode-eslint).

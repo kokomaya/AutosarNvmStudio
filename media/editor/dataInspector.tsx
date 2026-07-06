@@ -1,5 +1,6 @@
 import AddIcon from "@vscode/codicons/src/icons/add.svg";
 import CloseIcon from "@vscode/codicons/src/icons/close.svg";
+import EyeIcon from "@vscode/codicons/src/icons/eye.svg";
 import TrashIcon from "@vscode/codicons/src/icons/trash.svg";
 import React, { Suspense, useEffect, useMemo, useState } from "react";
 // recoil imports below
@@ -120,14 +121,17 @@ export const DataInspectorAside: React.FC<{ onInspecting?(isInspecting: boolean)
 							<code>{JSON.stringify(selectedBlock.raw ?? {}, null, 2)}</code>
 						</div>
 					</details>
-					<div style={{ marginTop: 8 }}>
+					<div className={style.nvmActionRow}>
 						<button
+							className={style.nvmActionBtn}
+							title="Scroll to and select this block's first byte"
 							onClick={() => {
 								// reveal block start in view and focus it
 								setOffset(select.startOfRowContainingByte(selectedBlock.offset, columnWidth));
 								ctx.focusedElement = new FocusedElement(false, selectedBlock.offset);
 							}}
 						>
+							<EyeIcon />
 							Reveal Block
 						</button>
 					</div>

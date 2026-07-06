@@ -143,6 +143,14 @@ export interface CreateNoteResult {
 	reason?: string;
 }
 
+/** A validated, anchored note ready to write — the output of {@link NvmCapabilities.validateNoteInput}. */
+export interface ResolvedNoteInput {
+	start: number;
+	end: number;
+	title: string;
+	body: string;
+}
+
 /**
  * Raised for invalid capability input (bad range, missing anchor, empty note).
  * Tools catch it and surface `message` to the model as a normal tool result.
@@ -344,14 +352,16 @@ export class NvmCapabilities {
 	}
 
 	/**
-	 * Create a note on the active dump — the ONE AI write path, deliberately
-	 * guarded so an agent can't spam whole-file notes:
+	 * Validate + resolve a note request WITHOUT writing or prompting. Enforces the
+	 * two data guardrails so both `prepareInvocation` (for the confirmation UI) and
+	 * `createNote` share one source of truth (SRP):
 	 * 1. it MUST be anchored (a named block, or an explicit start/end range),
-	 * 2. it MUST have a non-empty title AND body,
-	 * 3. the user is asked to confirm (modal) before anything is persisted.
+	 * 2. it MUST have a non-empty title AND body.
+	 * Throws {@link NvmCapabilityError} on violation. The THIRD guardrail — user
+	 * confirmation — is the host's job (the LM Tool's native `prepareInvocation`
+	 * confirmation, not a modal here), so the facade never blocks on UI.
 	 */
-	public async createNote(input: CreateNoteInput): Promise<CreateNoteResult> {
-		const doc = this.activeDoc();
+	public validateNoteInput(input: CreateNoteInput): ResolvedNoteInput {
 		const title = (input.title ?? "").trim();
 		const body = (input.body ?? "").trim();
 		if (!title || !body) {
@@ -359,8 +369,6 @@ export class NvmCapabilities {
 				"createNote requires a non-empty title and body — placeholder notes are rejected.",
 			);
 		}
-
-		// Resolve the anchor: a named block's range, or the explicit start/end.
 		let start: number;
 		let end: number;
 		if (input.blockName) {
@@ -381,20 +389,37 @@ export class NvmCapabilities {
 		if (end <= start) {
 			end = start + 1;
 		}
+		return { start, end, title, body };
+	}
 
-		// Confirm before writing — the user stays in control of every AI note.
-		const confirm = await vscode.window.showWarningMessage(
-			vscode.l10n.t(
-				'Copilot wants to create the note “{0}” on bytes {1}–{2}. Create it?',
-				title,
-				hex(start),
-				hex(end),
-			),
-			{ modal: true },
-			vscode.l10n.t("Create note"),
-		);
-		if (!confirm) {
-			return { created: false, reason: "The user declined to create the note." };
+	/**
+	 * Create a note on the active dump — the ONE AI write path. Confirmation is
+	 * handled by the caller (the LM Tool's native `prepareInvocation` UI), so this
+	 * only validates + writes. On a host that CANNOT show a tool confirmation, the
+	 * caller passes `confirmFallback` — a modal shown here as a last-resort guard so
+	 * an AI note is never written completely unconfirmed.
+	 */
+	public async createNote(
+		input: CreateNoteInput,
+		confirmFallback = false,
+	): Promise<CreateNoteResult> {
+		const doc = this.activeDoc();
+		const { start, end, title, body } = this.validateNoteInput(input);
+
+		if (confirmFallback) {
+			const ok = await vscode.window.showWarningMessage(
+				vscode.l10n.t(
+					'Copilot wants to create the note “{0}” on bytes {1}–{2}. Create it?',
+					title,
+					hex(start),
+					hex(end),
+				),
+				{ modal: true },
+				vscode.l10n.t("Create note"),
+			);
+			if (!ok) {
+				return { created: false, reason: "The user declined to create the note." };
+			}
 		}
 
 		const before = (await this.annotations.get(doc.uri)).notes.length;

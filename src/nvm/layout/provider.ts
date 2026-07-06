@@ -88,6 +88,18 @@ export interface LayoutConfig {
 	 * gets a deterministic auto color in the webview.
 	 */
 	palette?: Record<string, string>;
+	/**
+	 * `symbols` capability config (id → business name), consumed by the built-in
+	 * symbol adapters. Vendor-blind: the core only knows generic scraping recipes,
+	 * never what a name means. Currently supports `fromDefines`: scrape
+	 * `#define <prefix><NAME> <int>` tables from a declared source into an id→name
+	 * table (e.g. the AUTOSAR DEM event-id list), used to name blocks whose
+	 * `raw.logicalId` matches. The `source` is a logical name declared in
+	 * {@link sources}; the `prefix` is stripped from each macro name.
+	 */
+	symbols?: {
+		fromDefines?: { source: string; prefix: string }[];
+	};
 }
 
 export interface LayoutBlockDef {

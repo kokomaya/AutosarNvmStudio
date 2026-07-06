@@ -17,4 +17,5 @@ export * from "./structFormat";
 export * from "./cstruct";
 export * from "./arxmlStructs";
 export * from "./customView";
+export * from "./defineEnum";
 

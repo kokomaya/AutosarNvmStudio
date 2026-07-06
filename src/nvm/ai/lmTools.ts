@@ -29,8 +29,20 @@ const hex = (n: number) => `0x${n.toString(16).toUpperCase()}`;
 interface LmToolInvokeOptions<T> {
 	input?: T;
 }
+interface LmToolPrepareOptions<T> {
+	input?: T;
+}
+/** What `prepareInvocation` may return to drive VS Code's native confirmation UI. */
+interface LmToolPrepareResult {
+	invocationMessage?: string;
+	confirmationMessages?: { title: string; message: unknown };
+}
 interface LmTool<T> {
 	invoke(options: LmToolInvokeOptions<T>, token?: vscode.CancellationToken): Promise<unknown>;
+	prepareInvocation?(
+		options: LmToolPrepareOptions<T>,
+		token?: vscode.CancellationToken,
+	): LmToolPrepareResult | undefined;
 }
 interface LmApi {
 	registerTool<T>(name: string, tool: LmTool<T>): vscode.Disposable;
@@ -52,6 +64,12 @@ function textResult(result: string): unknown {
 	}
 	// Fallback shape accepted by early proposals.
 	return { content: [{ kind: "text", value: result }] };
+}
+
+/** A MarkdownString for confirmation messages, or a plain string if unavailable. */
+function markdown(text: string): unknown {
+	const v = vscode as unknown as { MarkdownString?: new (s: string) => unknown };
+	return v.MarkdownString ? new v.MarkdownString(text) : text;
 }
 
 /** Wrap a capability call so {@link NvmCapabilityError} becomes a normal result. */
@@ -202,8 +220,43 @@ export function registerLmTools(caps: NvmCapabilities): vscode.Disposable[] {
 		lm.registerTool<{ blockName?: string; start?: number; end?: number; title: string; body: string }>(
 			"nvm_createNote",
 			{
+				// Drive VS Code's OWN tool-confirmation UI (like other agent tools) instead
+				// of a modal in the facade. Validation runs here too, so a malformed note is
+				// rejected before the confirmation is even shown.
+				prepareInvocation: options => {
+					try {
+						const v = caps.validateNoteInput({
+							blockName: options.input?.blockName,
+							start: options.input?.start,
+							end: options.input?.end,
+							title: options.input?.title ?? "",
+							body: options.input?.body ?? "",
+						});
+						const firstLine = v.body.split("\n")[0].slice(0, 200);
+						return {
+							invocationMessage: `Creating NVM note “${v.title}”`,
+							confirmationMessages: {
+								title: "Create NVM note",
+								message: markdown(
+									`Create note **${v.title}** on bytes ${hex(v.start)}–${hex(v.end)}?\n\n> ${firstLine}`,
+								),
+							},
+						};
+					} catch (e) {
+						// Surface the validation error as the confirmation text; invoke() will
+						// return the same message and write nothing.
+						return {
+							confirmationMessages: {
+								title: "Create NVM note",
+								message: markdown(e instanceof Error ? e.message : String(e)),
+							},
+						};
+					}
+				},
 				invoke: async options =>
 					guarded(async () => {
+						// confirmFallback stays false: the host already confirmed via
+						// prepareInvocation (a generic confirm is always shown for extension tools).
 						const r = await caps.createNote({
 							blockName: options.input?.blockName,
 							start: options.input?.start,

@@ -13,6 +13,11 @@ vsc-extension-quickstart.md
 **/*.ts
 .esbuild.config.js
 .eslintignore
+eslint.config.mjs
+**/.eslintrc.mjs
+tmp/**
+test/**
+dist/test.js
 *.gif
 build
 *.tgz

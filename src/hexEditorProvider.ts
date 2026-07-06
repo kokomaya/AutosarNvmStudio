@@ -28,6 +28,7 @@ import { copyAsFormats } from "./copyAs";
 import { DataInspectorView } from "./dataInspectorView";
 import { disposeAll } from "./dispose";
 import { HexDocument } from "./hexDocument";
+import { getDependencyResolver } from "./nvm/discovery/fileIndex";
 import { HexEditorRegistry } from "./hexEditorRegistry";
 import { AnnotationService } from "./nvm/annotations/annotationService";
 import { CustomViewService } from "./nvm/customViews/customViewService";
@@ -524,7 +525,24 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 				// directory does not exist; keep searching
 			}
 		}
-		return undefined;
+		// Fallback: recursively discover under the user's configured workspace roots.
+		const abs = await this.resolveViaRoots(fileName);
+		return abs ? vscode.Uri.file(abs) : undefined;
+	}
+
+	/**
+	 * Fallback file discovery via the configured workspace roots
+	 * (`hexeditor.nvm.workspaceRoots`): recursively index them, prompt to
+	 * disambiguate duplicate base names, and persist the choice. Returns undefined
+	 * when no roots are configured or the file is not found — keeping the flat
+	 * three-dir scan as the fast, zero-config default.
+	 */
+	private async resolveViaRoots(fileName: string): Promise<string | undefined> {
+		const resolver = getDependencyResolver(this._context);
+		if (!resolver.hasRoots()) {
+			return undefined;
+		}
+		return resolver.resolve(fileName);
 	}
 
 	/**
@@ -589,6 +607,16 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 				return new TextDecoder("utf8").decode(buf);
 			} catch {
 				// directory does not exist; keep searching
+			}
+		}
+		// Fallback: recursively discover under the user's configured workspace roots.
+		const abs = await this.resolveViaRoots(fileName);
+		if (abs) {
+			try {
+				const buf = await vscode.workspace.fs.readFile(vscode.Uri.file(abs));
+				return new TextDecoder("utf8").decode(buf);
+			} catch {
+				// fall through to undefined
 			}
 		}
 		return undefined;

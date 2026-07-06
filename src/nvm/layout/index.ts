@@ -15,6 +15,7 @@
 import { arxmlSymbolProvider } from "./arxmlSymbols";
 import { configLayoutProvider } from "./configLayout";
 import { registerImageProvider, registerSymbolProvider } from "./context";
+import { defineSymbolProvider } from "./defineSymbols";
 import { registerLayoutProvider } from "./provider";
 import { srecordImageProvider } from "./srecordImage";
 import { structuredLayoutProvider } from "./structuredLayout";
@@ -38,3 +39,8 @@ registerImageProvider(srecordImageProvider);
 // `symbols` capability: derive business names from nearby AUTOSAR config. Inert
 // unless such config is present; layout blocks are named from it when ids match.
 registerSymbolProvider(arxmlSymbolProvider);
+
+// `symbols` capability: derive business names from `#define <prefix><NAME> <int>`
+// tables a descriptor declares via `symbols.fromDefines` (e.g. the DEM event-id
+// list). Inert unless a descriptor opts in. Merged with the ARXML adapter.
+registerSymbolProvider(defineSymbolProvider);

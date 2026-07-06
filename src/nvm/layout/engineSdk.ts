@@ -26,6 +26,7 @@ import {
 	parseBlkStruct,
 	parseCStructs,
 	parseCStructsEx,
+	parseDefineEnum,
 	parseEcucModule,
 	parseIntelHex,
 	parseSRecord,
@@ -43,8 +44,11 @@ import {
  * three struct-source parsers). It is a pure superset of v2, so v2 engines keep
  * working unchanged; v3 engines guard on `sdk.version >= 3` before using the new
  * members.
+ *
+ * v4 adds `parseDefineEnum` (scrape `#define <prefix><NAME> <int>` tables from a C
+ * header into a value→name map). Pure superset of v3.
  */
-export const ENGINE_SDK_VERSION = 3;
+export const ENGINE_SDK_VERSION = 4;
 
 /** The generic API surface handed to every external engine's `createEngine(sdk)`. */
 export interface EngineSdk {
@@ -99,6 +103,11 @@ export interface EngineSdk {
 	readonly parseCStructsEx: typeof parseCStructsEx;
 	/** Parse ARXML type definitions into a struct + enum catalog. */
 	readonly arxmlStructs: typeof arxmlStructs;
+	/**
+	 * Scrape a `#define <prefix><NAME> <int>` table from a C header into a
+	 * value→name map (SDK v4+). Vendor-blind; the caller supplies the prefix.
+	 */
+	readonly parseDefineEnum: typeof parseDefineEnum;
 
 	// --- generic AUTOSAR config (no vendor semantics) ---
 	/** Dependency-free XML parser. */
@@ -129,6 +138,7 @@ export function createEngineSdk(): EngineSdk {
 		parseCStructs,
 		parseCStructsEx,
 		arxmlStructs,
+		parseDefineEnum,
 		parseXml,
 		parseEcucModule,
 	};

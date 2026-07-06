@@ -37,12 +37,34 @@ export interface BlockStructBinding {
 	maxNodes?: number;
 }
 
+/**
+ * Build an enum from a `#define <prefix><NAME> <int>` table in a declared source.
+ * e.g. `{ enum: "DemEventName", source: "demLcfg", prefix:
+ * "DemConf_DemEventParameter_" }` turns the AUTOSAR DEM event-id list into a
+ * value→name enum a decoded field can bind to (`compu.enum` / `format.enum`).
+ */
+export interface DefineEnumSpec {
+	/** Catalog enum name to create/populate. */
+	enum: string;
+	/** Logical source name (declared in `sources`) to scrape. */
+	source: string;
+	/** The `#define` name prefix to require and strip. */
+	prefix: string;
+	/** Byte width of a field whose type IS this enum (default 4). */
+	width?: number;
+}
+
 /** Struct-decoding configuration carried in the descriptor `options`. */
 export interface FeeV3StructOptions {
 	/** Inline struct + enum catalog (JSON). */
 	structCatalog?: unknown;
 	/** Logical source names (declared in `sources`) to parse into the catalog. */
 	structs?: { fromSources?: string[] };
+	/**
+	 * Enums scraped from `#define <prefix><NAME> <int>` tables in declared sources
+	 * (e.g. the AUTOSAR DEM event-id list). Merged into the catalog like any enum.
+	 */
+	enumsFromDefines?: DefineEnumSpec[];
 	/** Block↔struct bindings; the engine's decision on business meaning. */
 	blockStructs?: BlockStructBinding[];
 	/**
@@ -136,6 +158,30 @@ export function buildStructResolver(
 			}
 		} else if (typeof sdk.parseCStructs === "function") {
 			parts.push(sdk.parseCStructs(merged));
+		}
+	}
+
+	// Enums scraped from `#define <prefix><NAME> <int>` tables (e.g. the DEM
+	// event-id list). Added as catalog enums so a decoded field can label its
+	// value; still overridable by the inline JSON overlay below.
+	const defineSpecs = options.enumsFromDefines ?? [];
+	if (defineSpecs.length && typeof sdk.parseDefineEnum === "function") {
+		const enums: Record<string, unknown> = {};
+		for (const spec of defineSpecs) {
+			if (!spec || !spec.enum || !spec.source || !spec.prefix) {
+				continue;
+			}
+			const content = sources[spec.source];
+			if (!content) {
+				continue;
+			}
+			const { values } = sdk.parseDefineEnum(content, spec.prefix);
+			if (Object.keys(values).length > 0) {
+				enums[spec.enum] = { name: spec.enum, values, width: spec.width ?? 4 };
+			}
+		}
+		if (Object.keys(enums).length > 0) {
+			parts.push({ structs: {}, enums } as NvmStructCatalog);
 		}
 	}
 

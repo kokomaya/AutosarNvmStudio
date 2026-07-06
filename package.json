@@ -20,7 +20,7 @@
     "Other"
   ],
   "icon": "icon.png",
-	"activationEvents": [],
+  "activationEvents": [],
   "main": "./dist/extension.js",
   "browser": "./dist/web/extension.js",
   "l10n": "./l10n",
@@ -97,8 +97,7 @@
             "type": "boolean",
             "default": false,
             "description": "%hexeditor.showOpenFileButton%"
-          }
-          ,
+          },
           "hexeditor.autoLoadArxml": {
             "type": "boolean",
             "default": true,
@@ -121,6 +120,21 @@
             ],
             "default": "sidecar",
             "description": "Where NVM bookmarks, tags and notes are persisted."
+          },
+          "hexeditor.nvm.workspaceRoots": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [],
+            "scope": "resource",
+            "markdownDescription": "Root folders searched **recursively** to auto-find dependency files a layout descriptor declares (e.g. `Fee_Lcfg.c`, `Dem_Lcfg.h`, `*.arxml`) when they aren't next to the dump or in `./conf`/`../conf`. Supports `${workspaceFolder}` and `${workspaceFolder:Name}`. When several files share a name you'll be asked which to use, and the choice is remembered (see `#hexeditor.nvm.fileChoices#`). The plugin never downloads files — fetch remote ones into a root yourself."
+          },
+          "hexeditor.nvm.fileChoices": {
+            "type": "object",
+            "default": {},
+            "scope": "resource",
+            "markdownDescription": "Remembered dependency-file disambiguation choices (base file name → `{ relPath, root }`), written automatically when you pick among duplicates. Portable/shareable: paths are relative to a workspace root so they re-resolve on another machine. Use the command **NVM: Reselect Dependency File** to change a choice. A machine-local absolute-path cache is kept separately in workspace state."
           }
         }
       }
@@ -284,6 +298,18 @@
         "icon": "$(comment-discussion)"
       },
       {
+        "command": "hexEditor.nvm.showCapabilities",
+        "category": "NVM",
+        "title": "Show Capabilities",
+        "icon": "$(list-unordered)"
+      },
+      {
+        "command": "hexEditor.nvm.reselectDependency",
+        "category": "NVM",
+        "title": "Reselect Dependency File",
+        "icon": "$(references)"
+      },
+      {
         "command": "hexEditor.nvm.addBookmarkHere",
         "category": "NVM",
         "title": "Add Bookmark Here",
@@ -374,7 +400,10 @@
         "toolReferenceName": "nvmListBlocks",
         "canBeReferencedInPrompt": true,
         "icon": "$(list-flat)",
-        "tags": ["nvm", "hexeditor"],
+        "tags": [
+          "nvm",
+          "hexeditor"
+        ],
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -396,7 +425,10 @@
         "toolReferenceName": "nvmSearchBlocks",
         "canBeReferencedInPrompt": true,
         "icon": "$(search)",
-        "tags": ["nvm", "hexeditor"],
+        "tags": [
+          "nvm",
+          "hexeditor"
+        ],
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -413,7 +445,9 @@
               "description": "Index of the first match to return, for paging (default 0)."
             }
           },
-          "required": ["query"]
+          "required": [
+            "query"
+          ]
         }
       },
       {
@@ -423,7 +457,10 @@
         "toolReferenceName": "nvmGetDecoded",
         "canBeReferencedInPrompt": true,
         "icon": "$(symbol-structure)",
-        "tags": ["nvm", "hexeditor"],
+        "tags": [
+          "nvm",
+          "hexeditor"
+        ],
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -440,7 +477,9 @@
               "description": "Max nodes emitted (default 300)."
             }
           },
-          "required": ["name"]
+          "required": [
+            "name"
+          ]
         }
       },
       {
@@ -450,7 +489,10 @@
         "toolReferenceName": "nvmReadBytes",
         "canBeReferencedInPrompt": true,
         "icon": "$(file-binary)",
-        "tags": ["nvm", "hexeditor"],
+        "tags": [
+          "nvm",
+          "hexeditor"
+        ],
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -463,7 +505,10 @@
               "description": "Number of bytes to read (hard cap 4096)."
             }
           },
-          "required": ["offset", "length"]
+          "required": [
+            "offset",
+            "length"
+          ]
         }
       },
       {
@@ -473,7 +518,10 @@
         "toolReferenceName": "nvmCreateNote",
         "canBeReferencedInPrompt": true,
         "icon": "$(note)",
-        "tags": ["nvm", "hexeditor"],
+        "tags": [
+          "nvm",
+          "hexeditor"
+        ],
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -498,7 +546,10 @@
               "description": "The note's Markdown body — the actual finding (required)."
             }
           },
-          "required": ["title", "body"]
+          "required": [
+            "title",
+            "body"
+          ]
         }
       },
       {
@@ -508,7 +559,10 @@
         "toolReferenceName": "nvmAnalyzeBlock",
         "canBeReferencedInPrompt": true,
         "icon": "$(search)",
-        "tags": ["nvm", "hexeditor"],
+        "tags": [
+          "nvm",
+          "hexeditor"
+        ],
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -517,7 +571,9 @@
               "description": "The block name (or a substring) to analyze."
             }
           },
-          "required": ["name"]
+          "required": [
+            "name"
+          ]
         }
       },
       {
@@ -527,7 +583,10 @@
         "toolReferenceName": "nvmListAnnotations",
         "canBeReferencedInPrompt": true,
         "icon": "$(bookmark)",
-        "tags": ["nvm", "hexeditor"]
+        "tags": [
+          "nvm",
+          "hexeditor"
+        ]
       },
       {
         "name": "nvm_exportReport",
@@ -536,7 +595,10 @@
         "toolReferenceName": "nvmExportReport",
         "canBeReferencedInPrompt": true,
         "icon": "$(file)",
-        "tags": ["nvm", "hexeditor"]
+        "tags": [
+          "nvm",
+          "hexeditor"
+        ]
       },
       {
         "name": "nvm_riskDetection",
@@ -545,7 +607,10 @@
         "toolReferenceName": "nvmRiskDetection",
         "canBeReferencedInPrompt": true,
         "icon": "$(warning)",
-        "tags": ["nvm", "hexeditor"]
+        "tags": [
+          "nvm",
+          "hexeditor"
+        ]
       }
     ],
     "submenus": [
@@ -760,7 +825,8 @@
       {
         "command": "hexEditor.switchEditMode",
         "key": "Insert",
-        "when": "hexEditor:isActive"      },
+        "when": "hexEditor:isActive"
+      },
       {
         "command": "hexEditor.nvm.addBookmarkHere",
         "key": "ctrl+alt+b",
@@ -774,7 +840,8 @@
       {
         "command": "hexEditor.nvm.tagSelectionHere",
         "key": "ctrl+alt+t",
-        "when": "activeCustomEditorId == hexEditor.hexedit"      }
+        "when": "activeCustomEditorId == hexEditor.hexedit"
+      }
     ]
   },
   "scripts": {
@@ -783,7 +850,9 @@
     "fmt": "prettier --write \"{src,media,shared}/**/*.{ts,tsx}\" && npm run lint -- --fix",
     "watch": "node .esbuild.config.js --watch",
     "test": "tsc --noEmit && node ./src/test/runTest.js",
-    "nvmcli:build": "esbuild tools/nvmcli.ts --bundle --platform=node --outfile=dist/nvmcli.js"
+    "nvmcli:build": "esbuild tools/nvmcli.ts --bundle --platform=node --outfile=dist/nvmcli.js",
+    "vscode:prepublish": "npm run compile",
+    "package:vsix": "npm run compile && vsce package --no-dependencies -o dist/nvm-studio-hexeditor.vsix"
   },
   "devDependencies": {
     "@types/chai": "^5",
@@ -794,6 +863,7 @@
     "@types/react-dom": "^17.0.11",
     "@types/vscode": "^1.89.0",
     "@vscode/test-electron": "^2.5.2",
+    "@vscode/vsce": "^3.9.2",
     "chai": "^6",
     "esbuild": "^0.25",
     "esbuild-css-modules-plugin": "^3.1.0",

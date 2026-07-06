@@ -16,6 +16,9 @@ import { prepareLazyInitDiffWorker } from "./initWorker";
 import { registerChatParticipant } from "./nvm/ai/chatParticipant";
 import { registerLmTools } from "./nvm/ai/lmTools";
 import { NvmCapabilities } from "./nvm/ai/nvmCapabilities";
+import { registerShowCapabilities } from "./nvm/ai/showCapabilities";
+import { invalidateDependencyResolver } from "./nvm/discovery/fileIndex";
+import { registerReselectDependency } from "./nvm/discovery/reselectCommand";
 import { registerAnnotationCommands } from "./nvm/annotations/annotationCommands";
 import { AnnotationService } from "./nvm/annotations/annotationService";
 import { parseArxmlFile } from "./nvm/arxmlParser";
@@ -193,6 +196,16 @@ export async function activate(context: vscode.ExtensionContext) {
 	const nvmCapabilities = new NvmCapabilities(registry, annotationService);
 	context.subscriptions.push(...registerLmTools(nvmCapabilities));
 	context.subscriptions.push(...registerChatParticipant(nvmCapabilities));
+	context.subscriptions.push(registerShowCapabilities(context));
+	context.subscriptions.push(registerReselectDependency(context));
+	// Rebuild the dependency index when the configured roots change.
+	context.subscriptions.push(
+		vscode.workspace.onDidChangeConfiguration(e => {
+			if (e.affectsConfiguration("hexeditor.nvm.workspaceRoots")) {
+				invalidateDependencyResolver();
+			}
+		}),
+	);
 	context.subscriptions.push(
 		vscode.workspace.registerFileSystemProvider("hexdiff", new HexDiffFSProvider(), {
 			isCaseSensitive: typeof process !== 'undefined' && process.platform !== 'win32' && process.platform !== 'darwin',

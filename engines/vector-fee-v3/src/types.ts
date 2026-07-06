@@ -120,6 +120,8 @@ export interface EngineSdk {
 	parseCStructs?(source: string): NvmStructCatalog;
 	parseCStructsEx?(source: string): { catalog: NvmStructCatalog; diagnostics: string[] };
 	arxmlStructs?(xmlText: string): NvmStructCatalog;
+	/** SDK v4+: scrape `#define <prefix><NAME> <int>` into a value→name map. */
+	parseDefineEnum?(source: string, prefix: string): { values: Record<string, string> };
 	[key: string]: unknown;
 }
 
