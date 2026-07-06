@@ -109,7 +109,9 @@ export class AnnotationService {
 				break;
 			case "addNote": {
 				const note = this.newNote(cmd.start, cmd.end, cmd.title);
-				const body = NEW_NOTE_TEMPLATE(note.title ?? "Note", cmd.start, cmd.end);
+				// Use the caller-supplied body when present (e.g. an AI-authored note);
+				// otherwise seed with the human template so the note opens ready to edit.
+				const body = cmd.body ?? NEW_NOTE_TEMPLATE(note.title ?? "Note", cmd.start, cmd.end);
 				const ref = await this.store.writeNote(docUri, note.id, body);
 				note.file = ref.file;
 				note.body = ref.body;

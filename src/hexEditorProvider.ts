@@ -953,7 +953,13 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 			const uri = document.uri;
 			switch (command.kind) {
 				case "addBlock":
-					await this.addBlockToView(document, command.viewId, command.blockId, command.by);
+					await this.addBlockToView(
+						document,
+						command.viewId,
+						command.blockId,
+						command.by,
+						command.groupKey,
+					);
 					break;
 				case "createView":
 					await this._customViews.createView(uri, command.name);
@@ -998,6 +1004,7 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 		viewId: string,
 		blockId: string,
 		by?: "fingerprint" | "identity" | "id",
+		groupKey?: string,
 	): Promise<void> {
 		const blocks = this._registry.getNvmBlocks(document) as NvmBlockInfo[];
 		const block = blocks.find(b => b.id === blockId);
@@ -1011,6 +1018,7 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 			block,
 			viewId,
 			by ?? "fingerprint",
+			groupKey,
 		);
 		if (added) {
 			for (const messaging of this._registry.getMessagingByUri(document.uri)) {

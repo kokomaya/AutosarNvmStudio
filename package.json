@@ -370,11 +370,136 @@
       {
         "name": "nvm_listBlocks",
         "displayName": "NVM: list blocks",
-        "modelDescription": "List the parsed NVM blocks of the active hex-editor dump (name, offset, length, field count).",
+        "modelDescription": "List the parsed NVM blocks of the active hex-editor dump (name, offset, length, field count). Paged: pass limit/offset; the result states whether more blocks exist.",
         "toolReferenceName": "nvmListBlocks",
         "canBeReferencedInPrompt": true,
         "icon": "$(list-flat)",
-        "tags": ["nvm", "hexeditor"]
+        "tags": ["nvm", "hexeditor"],
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "limit": {
+              "type": "number",
+              "description": "Max blocks to return (default 100, hard cap 500)."
+            },
+            "offset": {
+              "type": "number",
+              "description": "Index of the first block to return, for paging (default 0)."
+            }
+          }
+        }
+      },
+      {
+        "name": "nvm_searchBlocks",
+        "displayName": "NVM: search blocks",
+        "modelDescription": "Search the active dump's blocks by a case-insensitive substring of the block name/id, or by a byte offset (0x.. or decimal) that falls inside a block. Paged. Prefer this over listing all blocks on large dumps.",
+        "toolReferenceName": "nvmSearchBlocks",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(search)",
+        "tags": ["nvm", "hexeditor"],
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "Substring of a block name/id, or a byte offset (0x.. or decimal)."
+            },
+            "limit": {
+              "type": "number",
+              "description": "Max blocks to return (default 100, hard cap 500)."
+            },
+            "offset": {
+              "type": "number",
+              "description": "Index of the first match to return, for paging (default 0)."
+            }
+          },
+          "required": ["query"]
+        }
+      },
+      {
+        "name": "nvm_getDecoded",
+        "displayName": "NVM: get decoded fields",
+        "modelDescription": "Return a single block's business-decoded field tree (values, units, enum labels), depth- and node-capped so large structures don't overflow. Use instead of analyzeBlock when you need decoded values rather than raw geometry.",
+        "toolReferenceName": "nvmGetDecoded",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(symbol-structure)",
+        "tags": ["nvm", "hexeditor"],
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "The block name (or a substring) whose decoded tree to return."
+            },
+            "maxDepth": {
+              "type": "number",
+              "description": "Max tree depth (default 4)."
+            },
+            "maxNodes": {
+              "type": "number",
+              "description": "Max nodes emitted (default 300)."
+            }
+          },
+          "required": ["name"]
+        }
+      },
+      {
+        "name": "nvm_readBytes",
+        "displayName": "NVM: read bytes",
+        "modelDescription": "Read a bounded window of raw bytes (hard cap 4096 bytes) from the active dump at a byte offset and return them as space-separated hex. Use for inspecting actual bytes without loading the whole file.",
+        "toolReferenceName": "nvmReadBytes",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(file-binary)",
+        "tags": ["nvm", "hexeditor"],
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "offset": {
+              "type": "number",
+              "description": "Start byte offset (0 = image base)."
+            },
+            "length": {
+              "type": "number",
+              "description": "Number of bytes to read (hard cap 4096)."
+            }
+          },
+          "required": ["offset", "length"]
+        }
+      },
+      {
+        "name": "nvm_createNote",
+        "displayName": "NVM: create note",
+        "modelDescription": "Create ONE anchored note on the active dump. Use sparingly — only for a specific finding, never a whole-file summary. The note MUST target a block (blockName) or a byte range (start/end) and MUST have a meaningful title and body. The user is asked to confirm before the note is written.",
+        "toolReferenceName": "nvmCreateNote",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(note)",
+        "tags": ["nvm", "hexeditor"],
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "blockName": {
+              "type": "string",
+              "description": "Anchor the note to this block's byte range (preferred). Omit if using start/end."
+            },
+            "start": {
+              "type": "number",
+              "description": "Start byte offset to anchor to (used when blockName is omitted)."
+            },
+            "end": {
+              "type": "number",
+              "description": "Exclusive end byte offset of the range (optional; defaults to start+1)."
+            },
+            "title": {
+              "type": "string",
+              "description": "A concise, meaningful note title (required)."
+            },
+            "body": {
+              "type": "string",
+              "description": "The note's Markdown body — the actual finding (required)."
+            }
+          },
+          "required": ["title", "body"]
+        }
       },
       {
         "name": "nvm_analyzeBlock",

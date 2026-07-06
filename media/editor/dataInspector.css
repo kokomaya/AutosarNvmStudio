@@ -1,3 +1,20 @@
+/* Collapsible "Primitive types" group wrapping the type grid + endian toggle. */
+.typesSection {
+	margin: 0.3rem 0 0 0;
+}
+
+.typesSection > summary {
+	cursor: pointer;
+	user-select: none;
+	font-size: 0.85em;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	font-weight: 600;
+	opacity: 0.8;
+	margin-bottom: 6px;
+	font-family: var(--vscode-font-family);
+}
+
 .types {
 	display: grid;
 	gap: 0.3rem 1rem;

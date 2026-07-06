@@ -268,7 +268,7 @@ export type NvmAnnotationCommand =
 	| { kind: "assignTag"; tagId: string; start: number; end: number }
 	| { kind: "createAndAssignTag"; label: string; color?: string; start: number; end: number }
 	| { kind: "unassignTag"; assignmentId: string }
-	| { kind: "addNote"; start: number; end: number; title?: string }
+	| { kind: "addNote"; start: number; end: number; title?: string; body?: string }
 	| { kind: "openNote"; id: string }
 	| { kind: "deleteNote"; id: string };
 
@@ -308,6 +308,9 @@ export type NvmCustomViewCommand =
 			blockId: string;
 			/** How structurally-matching blocks are grouped (default: fingerprint). */
 			by?: "fingerprint" | "identity" | "id";
+			/** When set, merge into this existing group (user-curated union) instead
+			 * of adding a new group. Omit to add a new group (host may still prompt). */
+			groupKey?: string;
 	  }
 	| { kind: "createView"; name: string }
 	| { kind: "renameView"; viewId: string }

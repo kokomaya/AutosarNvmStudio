@@ -140,6 +140,84 @@ describe("NVM custom view (whole-block, fingerprint grouping)", () => {
 		});
 	});
 
+	describe("union group (user-curated merge)", () => {
+		it("selects blocks matched by ANY member selector, offset-sorted & de-duped", () => {
+			// Two differently-named, structureless blocks the plugin can't prove are
+			// related. The user merges them by name-glob members into one union group.
+			const blocks: NvmBlockInfo[] = [
+				{ id: "s0", name: "DemSecondaryDataBlock", offset: 0x80, length: 8 },
+				{ id: "p5", name: "DemPrimaryDataBlock5", offset: 0x40, length: 8 },
+				{ id: "p0", name: "DemPrimaryDataBlock0", offset: 0, length: 8 },
+				{ id: "x0", name: "Unrelated", offset: 0xc0, length: 8 },
+			];
+			const sel = {
+				by: "union" as const,
+				value: "merged_nameGlob_DemPrimaryDataBlock*",
+				members: [
+					{ by: "nameGlob" as const, value: "DemPrimaryDataBlock*" },
+					{ by: "nameGlob" as const, value: "DemSecondaryDataBlock" },
+				],
+			};
+			const got = selectBlocks(sel, blocks);
+			// p0, p5 (primary family) + s0 (secondary), offset order; Unrelated excluded.
+			expect(got.map(b => b.id)).to.deep.equal(["p0", "p5", "s0"]);
+		});
+
+		it("resolves a union of decoded blocks into ONE sub-table with the column union", () => {
+			// One block has an extra field; a union merges both into one comparison table.
+			const b0 = block("m0", "M0", 0, "0x1", [leaf("A", 0, 1)]);
+			const b1 = block("m1", "M1", 0x40, "0x2", [leaf("A", 0x40, 2), leaf("B", 0x44, 3)]);
+			const r = resolveCustomView(
+				view([
+					{
+						by: "union",
+						value: "merged_id_m0",
+						members: [
+							{ by: "id", value: "m0" },
+							{ by: "id", value: "m1" },
+						],
+					},
+				]),
+				[b0, b1],
+			);
+			expect(r.groups).to.have.length(1);
+			const g = r.groups[0];
+			expect(g.matchedBlocks).to.equal(2);
+			expect(g.columns.map(c => c.key)).to.deep.equal(["A", "B"]);
+			const row0 = g.rows.find(x => x.blockLabel === "M0")!;
+			expect(row0.cells["B"].text).to.equal(""); // M0 lacks B
+		});
+
+		it("coerceViewSet keeps a union selector and its members, dropping bad members", () => {
+			const set = coerceViewSet({
+				views: [
+					{
+						id: "u",
+						name: "Merged",
+						scope: "dump",
+						groups: [
+							{
+								by: "union",
+								value: "merged_id_a",
+								members: [
+									{ by: "id", value: "a" },
+									{ by: "bogus", value: "z" }, // dropped
+									{ by: "nameGlob", value: "X*" },
+								],
+							},
+							{ by: "union", value: "empty", members: [] }, // whole group dropped
+						],
+					},
+				],
+			});
+			expect(set.views).to.have.length(1);
+			const groups = set.views[0].groups;
+			expect(groups).to.have.length(1);
+			expect(groups[0].by).to.equal("union");
+			expect(groups[0].members?.map(m => m.by)).to.deep.equal(["id", "nameGlob"]);
+		});
+	});
+
 	describe("findNode", () => {
 		it("descends a name path into nested children", () => {
 			const b = sampleBlocks().find(x => x.id === "a0")!;

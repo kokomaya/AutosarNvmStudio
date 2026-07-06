@@ -13,10 +13,7 @@
  */
 
 import * as vscode from "vscode";
-import { NvmBlockInfo } from "../../../shared/protocol";
-import { HexEditorRegistry } from "../../hexEditorRegistry";
-import { AnnotationService } from "../annotations/annotationService";
-import { buildActiveReport } from "../report/reportCommands";
+import { NvmCapabilities } from "./nvmCapabilities";
 
 const hex = (n: number) => `0x${n.toString(16).toUpperCase()}`;
 
@@ -29,37 +26,35 @@ function getChatApi(): ChatApi | undefined {
 	return chat && typeof chat.createChatParticipant === "function" ? (chat as ChatApi) : undefined;
 }
 
-/** Build a compact, model-friendly context for the active dump. */
-async function buildContext(
-	registry: HexEditorRegistry,
-	annotations: AnnotationService,
-): Promise<string> {
-	const doc = registry.activeDocument;
-	if (!doc) {
-		return "There is no active NVM dump open in the hex editor.";
-	}
-	const blocks = registry.getNvmBlocks(doc) as NvmBlockInfo[];
-	const set = await annotations.get(doc.uri);
-	const lines: string[] = [];
-	lines.push(`Active dump: ${doc.uri.path.replace(/^.*\//, "")}`);
-	lines.push(`Blocks: ${blocks.length}, Bookmarks: ${set.bookmarks.length}, Tags: ${set.tags.length}, Notes: ${set.notes.length}`);
-	if (blocks.length) {
-		lines.push("", "Blocks:");
-		for (const b of blocks.slice(0, 200)) {
-			lines.push(`- ${b.name ?? b.id} @ ${hex(b.offset)} (len ${b.length}, ${b.fields?.length ?? 0} fields)`);
+/** Build a compact, model-friendly context for the active dump (via the facade). */
+async function buildContext(caps: NvmCapabilities): Promise<string> {
+	try {
+		const page = caps.listBlocks({ limit: 200 });
+		const annotations = await caps.listAnnotations();
+		const lines: string[] = [];
+		lines.push(
+			`Blocks: ${page.total}, Bookmarks: ${annotations.bookmarks.length}, Tags: ${annotations.tags.length}, Notes: ${annotations.notes.length}`,
+		);
+		if (page.items.length) {
+			lines.push("", "Blocks:");
+			for (const b of page.items) {
+				lines.push(`- ${b.name ?? b.id} @ ${hex(b.offset)} (len ${b.length}, ${b.fieldCount} fields)`);
+			}
+			if (page.hasMore) {
+				lines.push(`… ${page.total - page.returned} more (use #nvmSearchBlocks to narrow).`);
+			}
 		}
+		return lines.join("\n");
+	} catch (e) {
+		return e instanceof Error ? e.message : "There is no active NVM dump open in the hex editor.";
 	}
-	return lines.join("\n");
 }
 
 /**
  * Register the `@nvm` chat participant (when the API exists) plus the
  * `hexEditor.nvm.openChat` command that opens Copilot Chat prefilled for NVM.
  */
-export function registerChatParticipant(
-	registry: HexEditorRegistry,
-	annotations: AnnotationService,
-): vscode.Disposable[] {
+export function registerChatParticipant(caps: NvmCapabilities): vscode.Disposable[] {
 	const disposables: vscode.Disposable[] = [];
 	const chat = getChatApi();
 
@@ -73,7 +68,7 @@ export function registerChatParticipant(
 			},
 			token: vscode.CancellationToken,
 		): Promise<void> => {
-			const ctx = await buildContext(registry, annotations);
+			const ctx = await buildContext(caps);
 			const model = (request as { model?: LanguageModelLike }).model;
 			if (!model || typeof model.sendRequest !== "function") {
 				stream.markdown(
@@ -108,8 +103,14 @@ export function registerChatParticipant(
 			// a report-context message if the participant/API is unavailable.
 			const opened = await tryOpenChat("@nvm ");
 			if (!opened) {
-				const report = await buildActiveReport(registry, annotations);
-				const query = report
+				let hasDump = false;
+				try {
+					caps.listBlocks({ limit: 1 });
+					hasDump = true;
+				} catch {
+					hasDump = false;
+				}
+				const query = hasDump
 					? `Analyze this NVM dump. Use #nvmListBlocks and #nvmRiskDetection.`
 					: "Open an NVM dump, then ask about it here.";
 				await tryOpenChat(query);

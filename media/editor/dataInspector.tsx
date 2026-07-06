@@ -479,6 +479,9 @@ const InspectorContents: React.FC<{
 }> = ({ offset, columns }) => {
 	const defaultEndianness = useRecoilValue(select.editorSettings).defaultEndianness;
 	const [endianness, setEndianness] = usePersistedState("endianness", defaultEndianness);
+	// Remember whether the primitive-types group is expanded (defaults to open),
+	// mirroring how endianness is persisted across hover/aside inspector views.
+	const [typesOpen, setTypesOpen] = usePersistedState("dataInspectorTypesOpen", true);
 	const target = useFileBytes(offset, lookahead);
 	const dv = new DataView(target.buffer);
 	const le = endianness === Endianness.Little;
@@ -486,21 +489,31 @@ const InspectorContents: React.FC<{
 	return (
 		<>
 			<NvmByteExplain offset={offset} />
-			<dl className={style.types} style={{ gridTemplateColumns: "max-content ".repeat(columns) }}>
-				{inspectableTypes.map(({ label, convert, minBytes }) => (
-					<React.Fragment key={label}>
-						<dt>{label}</dt>
-						<dd>
-							{target.length < minBytes ? (
-								<span style={{ opacity: 0.8 }}>End of File</span>
-							) : (
-								convert(dv, le)
-							)}
-						</dd>
-					</React.Fragment>
-				))}
-			</dl>
-			<EndiannessToggle endianness={endianness} setEndianness={setEndianness} />
+			<details
+				className={style.typesSection}
+				open={typesOpen}
+				onToggle={e => setTypesOpen((e.target as HTMLDetailsElement).open)}
+			>
+				<summary>Primitive types</summary>
+				<dl
+					className={style.types}
+					style={{ gridTemplateColumns: "max-content ".repeat(columns) }}
+				>
+					{inspectableTypes.map(({ label, convert, minBytes }) => (
+						<React.Fragment key={label}>
+							<dt>{label}</dt>
+							<dd>
+								{target.length < minBytes ? (
+									<span style={{ opacity: 0.8 }}>End of File</span>
+								) : (
+									convert(dv, le)
+								)}
+							</dd>
+						</React.Fragment>
+					))}
+				</dl>
+				<EndiannessToggle endianness={endianness} setEndianness={setEndianness} />
+			</details>
 		</>
 	);
 };

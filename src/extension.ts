@@ -15,6 +15,7 @@ import { HexEditorRegistry } from "./hexEditorRegistry";
 import { prepareLazyInitDiffWorker } from "./initWorker";
 import { registerChatParticipant } from "./nvm/ai/chatParticipant";
 import { registerLmTools } from "./nvm/ai/lmTools";
+import { NvmCapabilities } from "./nvm/ai/nvmCapabilities";
 import { registerAnnotationCommands } from "./nvm/annotations/annotationCommands";
 import { AnnotationService } from "./nvm/annotations/annotationService";
 import { parseArxmlFile } from "./nvm/arxmlParser";
@@ -188,8 +189,10 @@ export async function activate(context: vscode.ExtensionContext) {
 	);
 	context.subscriptions.push(...registerReportCommands(registry, annotationService));
 	context.subscriptions.push(...registerReportPreview(registry, annotationService));
-	context.subscriptions.push(...registerLmTools(registry, annotationService));
-	context.subscriptions.push(...registerChatParticipant(registry, annotationService));
+	// One vendor-blind capability facade backs both AI surfaces (LM tools + chat).
+	const nvmCapabilities = new NvmCapabilities(registry, annotationService);
+	context.subscriptions.push(...registerLmTools(nvmCapabilities));
+	context.subscriptions.push(...registerChatParticipant(nvmCapabilities));
 	context.subscriptions.push(
 		vscode.workspace.registerFileSystemProvider("hexdiff", new HexDiffFSProvider(), {
 			isCaseSensitive: typeof process !== 'undefined' && process.platform !== 'win32' && process.platform !== 'darwin',

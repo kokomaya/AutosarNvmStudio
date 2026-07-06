@@ -33,12 +33,18 @@ export type ViewScope = "dump" | "template";
  * - `identity`: match `block.identity.key` (a block's versions/copies).
  * - `id`: match a single `block.id` exactly.
  * - `nameGlob`: match `block.name` against a `*`-glob.
+ * - `union`: the union of the `members` selectors — a user-curated group that
+ *   merges blocks the plugin can NOT prove are related (e.g. differently-named,
+ *   un-decoded blocks the user asserts share a layout). The plugin never forms a
+ *   union on its own; it only records what the user explicitly merged.
  */
 export interface BlockSelector {
-	by: "fingerprint" | "identity" | "id" | "nameGlob";
+	by: "fingerprint" | "identity" | "id" | "nameGlob" | "union";
 	value: string;
 	/** Human label for the group (e.g. the representative block name, de-numbered). */
 	label?: string;
+	/** For `by: "union"` only: the merged member selectors (each matched in turn). */
+	members?: BlockSelector[];
 }
 
 /** A single user-defined custom view: a set of block groups. */
@@ -156,6 +162,9 @@ function selectorMatches(sel: BlockSelector, block: NvmBlockInfo): boolean {
 			return block.id === sel.value;
 		case "nameGlob":
 			return block.name !== undefined && globToRegExp(sel.value).test(block.name);
+		case "union":
+			// A user-curated merge: match if ANY member selector matches.
+			return (sel.members ?? []).some(m => selectorMatches(m, block));
 		default:
 			return false;
 	}

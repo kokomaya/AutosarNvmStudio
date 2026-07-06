@@ -2,9 +2,11 @@
 // Licensed under the MIT license.
 
 /**
- * VS Code Language Model Tools for NVM analysis. These let Copilot (or any
- * agent using the LM Tools API) query the active dump: list blocks, analyze a
- * block, list annotations, export a report and run risk heuristics.
+ * VS Code Language Model Tools for NVM analysis. These let Copilot (or any agent
+ * using the LM Tools API) query the active dump. Every tool is a THIN adapter:
+ * it validates the model's input, calls the vendor-blind {@link NvmCapabilities}
+ * facade (which owns all paging/caps/guardrails), and formats the structured
+ * result as text. No data-access or capping logic lives here (SRP/DIP).
  *
  * The LM Tools API postdates this extension's `@types/vscode` baseline, so it is
  * accessed loosely and guarded — the tools simply don't register on hosts
@@ -12,10 +14,14 @@
  */
 
 import * as vscode from "vscode";
-import { NvmBlockInfo } from "../../../shared/protocol";
-import { HexEditorRegistry } from "../../hexEditorRegistry";
-import { AnnotationService } from "../annotations/annotationService";
-import { buildActiveReport } from "../report/reportCommands";
+import {
+	AnnotationsSummary,
+	BlockSummary,
+	DecodedSummaryNode,
+	NvmCapabilities,
+	NvmCapabilityError,
+	Page,
+} from "./nvmCapabilities";
 
 const hex = (n: number) => `0x${n.toString(16).toUpperCase()}`;
 
@@ -48,16 +54,65 @@ function textResult(result: string): unknown {
 	return { content: [{ kind: "text", value: result }] };
 }
 
-function activeBlocks(registry: HexEditorRegistry): NvmBlockInfo[] | undefined {
-	const doc = registry.activeDocument;
-	return doc ? (registry.getNvmBlocks(doc) as NvmBlockInfo[]) : undefined;
+/** Wrap a capability call so {@link NvmCapabilityError} becomes a normal result. */
+async function guarded(fn: () => Promise<string> | string): Promise<unknown> {
+	try {
+		return textResult(await fn());
+	} catch (e) {
+		if (e instanceof NvmCapabilityError) {
+			return textResult(e.message);
+		}
+		return textResult(`NVM tool error: ${e instanceof Error ? e.message : String(e)}`);
+	}
+}
+
+function formatBlockPage(page: Page<BlockSummary>): string {
+	if (page.total === 0) {
+		return "The active dump has no matching NVM blocks.";
+	}
+	const lines = page.items.map(
+		b => `- ${b.name ?? b.id} @ ${hex(b.offset)} (len ${b.length}, ${b.fieldCount} fields)`,
+	);
+	const range = `Showing ${page.offset + 1}–${page.offset + page.returned} of ${page.total}`;
+	const more = page.hasMore
+		? `\n(${page.total - page.offset - page.returned} more — call again with offset ${
+				page.offset + page.returned
+			})`
+		: "";
+	return `${range}:\n${lines.join("\n")}${more}`;
+}
+
+function formatDecoded(nodes: DecodedSummaryNode[], depth: number): string {
+	const out: string[] = [];
+	for (const n of nodes) {
+		const indent = "  ".repeat(depth);
+		const val =
+			n.enumLabel !== undefined
+				? n.enumLabel
+				: n.value !== undefined
+					? String(n.value)
+					: n.type;
+		const unit = n.unit ? ` ${n.unit}` : "";
+		out.push(`${indent}- ${n.name}: ${val}${unit} @ ${hex(n.offset)}`);
+		if (n.children?.length) {
+			out.push(formatDecoded(n.children, depth + 1));
+		}
+	}
+	return out.join("\n");
+}
+
+function formatAnnotations(a: AnnotationsSummary): string {
+	const bm = a.bookmarks.map(b => `  - ${b.label ?? "bookmark"} @ ${hex(b.offset)}`).join("\n");
+	const tags = a.tags.map(t => `  - ${t.label} (${t.assignments})`).join("\n");
+	const notes = a.notes
+		.map(n => `  - ${n.title ?? "note"} @ ${hex(n.offset)}–${hex(n.end)}`)
+		.join("\n");
+	const trunc = a.truncated ? "\n(some annotations omitted — list capped)" : "";
+	return `Bookmarks:\n${bm || "  (none)"}\nTags:\n${tags || "  (none)"}\nNotes:\n${notes || "  (none)"}${trunc}`;
 }
 
 /** Register all NVM language-model tools. No-op on hosts without the LM API. */
-export function registerLmTools(
-	registry: HexEditorRegistry,
-	annotations: AnnotationService,
-): vscode.Disposable[] {
+export function registerLmTools(caps: NvmCapabilities): vscode.Disposable[] {
 	const lm = getLmApi();
 	if (!lm) {
 		return [];
@@ -65,121 +120,126 @@ export function registerLmTools(
 	const d: vscode.Disposable[] = [];
 
 	d.push(
-		lm.registerTool("nvm_listBlocks", {
-			invoke: async () => {
-				const blocks = activeBlocks(registry);
-				if (!blocks) {
-					return textResult("No active NVM dump. Open a dump in the hex editor first.");
-				}
-				if (blocks.length === 0) {
-					return textResult("The active dump has no parsed NVM blocks (no matching layout/engine).");
-				}
-				const lines = blocks.map(
-					b => `- ${b.name ?? b.id} @ ${hex(b.offset)} (len ${b.length}, ${b.fields?.length ?? 0} fields)`,
-				);
-				return textResult(`NVM blocks (${blocks.length}):\n${lines.join("\n")}`);
-			},
+		lm.registerTool<{ limit?: number; offset?: number }>("nvm_listBlocks", {
+			invoke: async options =>
+				guarded(() =>
+					formatBlockPage(
+						caps.listBlocks({ limit: options.input?.limit, offset: options.input?.offset }),
+					),
+				),
+		}),
+	);
+
+	d.push(
+		lm.registerTool<{ query: string; limit?: number; offset?: number }>("nvm_searchBlocks", {
+			invoke: async options =>
+				guarded(() =>
+					formatBlockPage(
+						caps.searchBlocks(options.input?.query ?? "", {
+							limit: options.input?.limit,
+							offset: options.input?.offset,
+						}),
+					),
+				),
 		}),
 	);
 
 	d.push(
 		lm.registerTool<{ name: string }>("nvm_analyzeBlock", {
-			invoke: async options => {
-				const blocks = activeBlocks(registry);
-				if (!blocks?.length) {
-					return textResult("No parsed NVM blocks in the active dump.");
-				}
-				const q = (options.input?.name ?? "").toLowerCase();
-				const block =
-					blocks.find(b => (b.name ?? b.id).toLowerCase() === q) ??
-					blocks.find(b => (b.name ?? b.id).toLowerCase().includes(q));
-				if (!block) {
-					return textResult(`No block matching "${options.input?.name}".`);
-				}
-				const fields = (block.fields ?? [])
-					.map(
-						f =>
-							`  - ${f.name} [${f.kind}] @ ${hex(f.offset)} len ${f.length}${
-								f.link ? ` → ${hex(f.link.targetOffset)}` : ""
-							}`,
-					)
-					.join("\n");
-				return textResult(
-					`Block: ${block.name ?? block.id}\nOffset: ${hex(block.offset)}\nLength: ${
-						block.length
-					}\nRaw: ${JSON.stringify(block.raw ?? {})}\nFields:\n${fields || "  (none)"}`,
-				);
-			},
+			invoke: async options =>
+				guarded(() => {
+					const b = caps.analyzeBlock(options.input?.name ?? "");
+					const fields = b.fields
+						.map(
+							f =>
+								`  - ${f.name} [${f.kind}] @ ${hex(f.offset)} len ${f.length}${
+									f.linkTarget !== undefined ? ` → ${hex(f.linkTarget)}` : ""
+								}`,
+						)
+						.join("\n");
+					const rawLine =
+						b.raw !== undefined ? `\nRaw${b.rawTruncated ? " (truncated)" : ""}: ${b.raw}` : "";
+					const fieldsHdr = `Fields${b.fieldsTruncated ? " (truncated)" : ""}:`;
+					return `Block: ${b.name ?? b.id}\nOffset: ${hex(b.offset)}\nLength: ${b.length}${rawLine}\n${fieldsHdr}\n${fields || "  (none)"}`;
+				}),
+		}),
+	);
+
+	d.push(
+		lm.registerTool<{ name: string; maxDepth?: number; maxNodes?: number }>("nvm_getDecoded", {
+			invoke: async options =>
+				guarded(() => {
+					const s = caps.getDecoded(options.input?.name ?? "", {
+						maxDepth: options.input?.maxDepth,
+						maxNodes: options.input?.maxNodes,
+					});
+					if (s.nodes.length === 0) {
+						return `Block "${s.block}" has no decoded structure (not bound to a struct).`;
+					}
+					const trunc = s.truncated ? "\n(tree truncated — raise maxDepth/maxNodes for more)" : "";
+					return `Decoded ${s.block}:\n${formatDecoded(s.nodes, 0)}${trunc}`;
+				}),
+		}),
+	);
+
+	d.push(
+		lm.registerTool<{ offset: number; length: number }>("nvm_readBytes", {
+			invoke: async options =>
+				guarded(async () => {
+					const w = await caps.readBytes(options.input?.offset ?? -1, options.input?.length ?? 0);
+					return `Bytes @ ${hex(w.offset)} (${w.length} B):\n${w.hex}`;
+				}),
 		}),
 	);
 
 	d.push(
 		lm.registerTool("nvm_listAnnotations", {
-			invoke: async () => {
-				const doc = registry.activeDocument;
-				if (!doc) {
-					return textResult("No active NVM dump.");
-				}
-				const set = await annotations.get(doc.uri);
-				const bm = set.bookmarks.map(b => `  - ${b.label ?? "bookmark"} @ ${hex(b.anchor.offset)}`).join("\n");
-				const tags = set.tags
-					.map(t => `  - ${t.label} (${set.tagAssignments.filter(a => a.tagId === t.id).length})`)
-					.join("\n");
-				const notes = set.notes.map(n => `  - ${n.title ?? "note"} @ ${hex(n.anchor.offset)}`).join("\n");
-				return textResult(
-					`Bookmarks:\n${bm || "  (none)"}\nTags:\n${tags || "  (none)"}\nNotes:\n${notes || "  (none)"}`,
-				);
-			},
+			invoke: async () => guarded(async () => formatAnnotations(await caps.listAnnotations())),
 		}),
 	);
 
 	d.push(
-		lm.registerTool("nvm_exportReport", {
-			invoke: async () => {
-				const report = await buildActiveReport(registry, annotations);
-				return report ? textResult(report.markdown) : textResult("No active NVM dump to report on.");
+		lm.registerTool<{ blockName?: string; start?: number; end?: number; title: string; body: string }>(
+			"nvm_createNote",
+			{
+				invoke: async options =>
+					guarded(async () => {
+						const r = await caps.createNote({
+							blockName: options.input?.blockName,
+							start: options.input?.start,
+							end: options.input?.end,
+							title: options.input?.title ?? "",
+							body: options.input?.body ?? "",
+						});
+						return r.created
+							? `Created note${r.noteId ? ` (${r.noteId})` : ""}.`
+							: `Note not created: ${r.reason ?? "cancelled"}.`;
+					}),
 			},
+		),
+	);
+
+	d.push(
+		lm.registerTool("nvm_exportReport", {
+			invoke: async () =>
+				guarded(async () => {
+					const r = await caps.exportReport();
+					return r.truncated ? `${r.markdown}\n\n> (report truncated)` : r.markdown;
+				}),
 		}),
 	);
 
 	d.push(
 		lm.registerTool("nvm_riskDetection", {
-			invoke: async () => {
-				const blocks = activeBlocks(registry);
-				if (!blocks?.length) {
-					return textResult("No parsed NVM blocks to analyze.");
-				}
-				const risks: string[] = [];
-				const unresolved = blocks.filter(b => /^Tag \d+$/.test(b.name ?? ""));
-				if (unresolved.length) {
-					risks.push(
-						`- ${unresolved.length} block(s) have unresolved names ("Tag N") — the engine's config source (e.g. the generated block table) may be missing.`,
-					);
-				}
-				const empty = blocks.filter(b => !b.fields?.length && b.length === 0);
-				if (empty.length) {
-					risks.push(`- ${empty.length} zero-length block(s).`);
-				}
-				const overlap = findOverlap(blocks);
-				if (overlap !== undefined) {
-					risks.push(`- Overlapping blocks detected near ${hex(overlap)}.`);
-				}
-				return textResult(
-					risks.length ? `Potential risks:\n${risks.join("\n")}` : "No obvious risks detected.",
-				);
-			},
+			invoke: async () =>
+				guarded(() => {
+					const { risks } = caps.riskDetection();
+					return risks.length
+						? `Potential risks:\n${risks.map(r => `- ${r}`).join("\n")}`
+						: "No obvious risks detected.";
+				}),
 		}),
 	);
 
 	return d;
-}
-
-function findOverlap(blocks: NvmBlockInfo[]): number | undefined {
-	const sorted = [...blocks].sort((a, b) => a.offset - b.offset);
-	for (let i = 1; i < sorted.length; i++) {
-		if (sorted[i].offset < sorted[i - 1].offset + sorted[i - 1].length) {
-			return sorted[i].offset;
-		}
-	}
-	return undefined;
 }
