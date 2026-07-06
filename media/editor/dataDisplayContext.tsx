@@ -45,6 +45,16 @@ export interface NvmHoverTarget {
 }
 
 /**
+ * A one-shot "flash this byte" request. `token` is a monotonically increasing
+ * counter so re-flashing the same byte still fires the animation, and so a cell
+ * mounting after the flash (virtualized scroll) can detect it missed one.
+ */
+export interface FlashTarget {
+	byte: number;
+	token: number;
+}
+
+/**
  * Data management context component. Initially we used Recoil for this, but
  * this ended up introducing performance issues with very many components.
  */
@@ -65,6 +75,8 @@ export class DisplayContext {
 	private readonly focusChangeEmitter = new EventEmitter<FocusedElement | undefined>();
 	private readonly focusChangeHandlers = new Map<bigint, (isSelected: boolean) => void>();
 	private readonly focusChangeGenericHandler = new EventEmitter<number | undefined>();
+	private _flash?: FlashTarget;
+	private readonly flashEmitter = new EventEmitter<FlashTarget>();
 
 	/**
 	 * If the user is currently selecting data, the 'anchor' byte they started from.
@@ -132,6 +144,23 @@ export class DisplayContext {
 	 * Emitter that fires with the new focused byte.
 	 */
 	public readonly onDidChangeAnyFocus = this.focusChangeGenericHandler.addListener;
+
+	/**
+	 * Emitter that fires when a byte is flashed (a transient attention pulse used
+	 * by NVM panel jumps). Cells subscribe and play a one-shot CSS animation.
+	 */
+	public readonly onDidFlash = this.flashEmitter.addListener;
+
+	/** The most recent flash request, if any (read by cells mounting late). */
+	public get flashTarget(): FlashTarget | undefined {
+		return this._flash;
+	}
+
+	/** Briefly flash the byte at `offset` to draw the eye after a jump. */
+	public flash(offset: number): void {
+		this._flash = { byte: offset, token: (this._flash?.token ?? 0) + 1 };
+		this.flashEmitter.emit(this._flash);
+	}
 
 	/**
 	 * Emitter that fires when the given byte is hovered or unhovered.
@@ -271,6 +300,15 @@ export class DisplayContext {
 
 			this.focusedElement = new FocusedElement(false, msg.startingOffset);
 			this.setSelectionRanges([Range.inclusive(msg.startingOffset, msg.endingOffset)]);
+		});
+
+		registerHandler(MessageType.RevealNvmOffset, msg => {
+			// NVM panel jump: replicate a real byte click (focus + select drives the
+			// data inspector and the visible cursor), then flash to draw the eye. The
+			// scroll + block/unit selection are handled by the `state.ts` handlers.
+			this.focusedElement = new FocusedElement(false, msg.offset);
+			this.setSelectionRanges([Range.single(msg.offset)]);
+			this.flash(msg.offset);
 		});
 
 		registerHandler(MessageType.TriggerCopyAs, msg => {
@@ -448,6 +486,50 @@ export const useIsFocused = (element: FocusedElement): boolean => {
 	}, [element.key]);
 
 	return focused;
+};
+
+/**
+ * Hook that returns whether the given byte is currently flashing (a transient
+ * attention pulse after an NVM panel jump). True for the flash animation's
+ * duration, then auto-clears. Reads `flashTarget` on mount so a cell that mounts
+ * just after the flash (virtualized scroll into view) still plays it.
+ */
+const FLASH_MS = 800;
+export const useIsFlashing = (byte: number): boolean => {
+	const ctx = useDisplayContext();
+	const [flashing, setFlashing] = useState(false);
+
+	useEffect(() => {
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		let lastToken = -1;
+		const trigger = (target: { byte: number; token: number }) => {
+			if (target.byte !== byte || target.token === lastToken) {
+				return;
+			}
+			lastToken = target.token;
+			// Re-arm from false so the same cell can replay the CSS animation.
+			setFlashing(false);
+			requestAnimationFrame(() => setFlashing(true));
+			if (timer) {
+				clearTimeout(timer);
+			}
+			timer = setTimeout(() => setFlashing(false), FLASH_MS);
+		};
+
+		// Catch a flash that fired before this cell mounted.
+		if (ctx.flashTarget) {
+			trigger(ctx.flashTarget);
+		}
+		const disposable = ctx.onDidFlash(trigger);
+		return () => {
+			disposable.dispose();
+			if (timer) {
+				clearTimeout(timer);
+			}
+		};
+	}, [byte]);
+
+	return flashing;
 };
 
 /** Hook that returns whether the given byte is unsaved */

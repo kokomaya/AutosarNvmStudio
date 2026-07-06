@@ -31,6 +31,7 @@ import {
 	dataCellCls,
 	FocusedElement,
 	useDisplayContext,
+	useIsFlashing,
 	useIsFocused,
 	useIsHovered,
 	useIsSelected,
@@ -520,21 +521,48 @@ const NvmHoverPopover: React.FC = () => {
 									Jump
 								</button>
 							)}
-							<button
-								className={style.nvmActionButton}
-								title="Add a bookmark at this block"
-								onClick={() => {
-									select.sendAnnotationCommand({
-										kind: "addBookmark",
-										offset: block.offset,
-										label: block.name ?? block.id,
-									});
-									hideNow();
-								}}
-							>
-								<BookmarkIcon />
-								Bookmark
-							</button>
+							{(() => {
+								// If a bookmark already sits at this block's start, offer to
+								// edit its label; otherwise create one (prompting for a label).
+								// The host shows the input box — the webview can't.
+								const existing = annotations.bookmarks.find(
+									b => b.offset === block.offset,
+								);
+								return existing ? (
+									<button
+										className={style.nvmActionButton}
+										title="Edit this bookmark's label"
+										onClick={() => {
+											select.sendAnnotationCommand({
+												kind: "renameBookmark",
+												id: existing.id,
+												label: "__prompt__",
+											});
+											hideNow();
+										}}
+									>
+										<EditIcon />
+										Edit bookmark
+									</button>
+								) : (
+									<button
+										className={style.nvmActionButton}
+										title="Add a bookmark at this block"
+										onClick={() => {
+											select.sendAnnotationCommand({
+												kind: "addBookmark",
+												offset: block.offset,
+												label: block.name ?? block.id,
+												prompt: true,
+											});
+											hideNow();
+										}}
+									>
+										<BookmarkIcon />
+										Bookmark
+									</button>
+								);
+							})()}
 							<button
 								className={style.nvmActionButton}
 								title="Attach a note to this block"
@@ -982,6 +1010,7 @@ const DataCell: React.FC<{
 
 	const isHovered = useIsHovered(focusedElement);
 	const isSelected = useIsSelected(offset);
+	const isFlashing = useIsFlashing(offset);
 
 	const editStyle =
 		editMode === HexDocumentEditOp.Replace
@@ -1005,6 +1034,7 @@ const DataCell: React.FC<{
 				isHovered && style.dataCellHovered,
 				isSelected && style.dataCellSelected,
 				isHovered && isSelected && style.dataCellSelectedHovered,
+				isFlashing && style.dataCellFlash,
 				useIsUnsaved(offset) && style.dataCellUnsaved,
 			)}
 			onMouseEnter={onMouseEnter}

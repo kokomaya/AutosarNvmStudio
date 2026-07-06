@@ -1091,6 +1091,33 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 				}
 				command = { ...command, tagId };
 			}
+			// The webview asked to prompt for a bookmark label on creation.
+			if (command.kind === "addBookmark" && command.prompt) {
+				const label = await vscode.window.showInputBox({
+					title: "New bookmark",
+					prompt: "Bookmark label (optional)",
+					value: command.label ?? `0x${command.offset.toString(16).toUpperCase()}`,
+				});
+				if (label === undefined) {
+					return; // cancelled → don't create
+				}
+				command = { kind: "addBookmark", offset: command.offset, label: label || undefined };
+			}
+			// The webview asked to edit an existing bookmark's label.
+			if (command.kind === "renameBookmark" && command.label === "__prompt__") {
+				const bookmarkId = command.id;
+				const set = await this._annotations.get(document.uri);
+				const current = set.bookmarks.find(b => b.id === bookmarkId)?.label ?? "";
+				const label = await vscode.window.showInputBox({
+					title: "Rename bookmark",
+					prompt: "Bookmark label (leave empty to clear)",
+					value: current,
+				});
+				if (label === undefined) {
+					return; // cancelled
+				}
+				command = { kind: "renameBookmark", id: bookmarkId, label: label || undefined };
+			}
 			await this._annotations.apply(document.uri, command);
 			await this.pushAnnotations(messaging, document);
 		} catch (e) {

@@ -185,7 +185,7 @@ export function registerNvmStudioView(
 			return;
 		}
 		for (const messaging of registry.getMessagingByUri(doc.uri)) {
-			messaging.sendEvent({ type: MessageType.GoToOffset, offset });
+			messaging.sendEvent({ type: MessageType.RevealNvmOffset, offset });
 		}
 	});
 
@@ -200,6 +200,32 @@ export function registerNvmStudioView(
 			if (uri) {
 				await vscode.window.showTextDocument(uri, { preview: false });
 			}
+		},
+	);
+
+	const renameBookmark = vscode.commands.registerCommand(
+		"hexEditor.nvm.renameBookmark",
+		async (node: StudioNode) => {
+			const doc = registry.activeDocument;
+			if (!doc || node?.kind !== "bookmark" || !node.id) {
+				return;
+			}
+			const set = await annotations.get(doc.uri);
+			const current = set.bookmarks.find(b => b.id === node.id)?.label ?? "";
+			const label = await vscode.window.showInputBox({
+				title: "Rename bookmark",
+				prompt: "Bookmark label (leave empty to clear)",
+				value: current,
+			});
+			if (label === undefined) {
+				return; // cancelled
+			}
+			await annotations.apply(doc.uri, {
+				kind: "renameBookmark",
+				id: node.id,
+				label: label || undefined,
+			});
+			await pushToActive();
 		},
 	);
 
@@ -221,5 +247,5 @@ export function registerNvmStudioView(
 		},
 	);
 
-	return [view, jumpTo, openNote, deleteNode];
+	return [view, jumpTo, openNote, renameBookmark, deleteNode];
 }

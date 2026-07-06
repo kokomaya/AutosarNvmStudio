@@ -196,9 +196,20 @@ const NvmTagSection: React.FC<{ start: number; end: number }> = ({ start, end })
 
 	const unassigned = annotations.tags.filter(t => !covering.some(a => a.tagId === t.id));
 
+	// The tag manager is a secondary tool, so keep it collapsed by default (it
+	// otherwise leads with "No tags on this range"). Persist the open state like
+	// the primitive-types section does.
+	const [tagsOpen, setTagsOpen] = usePersistedState("dataInspectorTagsOpen", false);
+
 	return (
-		<div className={style.nvmTagSection}>
-			<div className={style.nvmTagHeader}>Tags</div>
+		<details
+			className={style.nvmTagSection}
+			open={tagsOpen}
+			onToggle={e => setTagsOpen((e.target as HTMLDetailsElement).open)}
+		>
+			<summary className={style.nvmTagHeader}>
+				Tags{covering.length ? ` (${covering.length})` : ""}
+			</summary>
 
 			<div className={style.nvmTagChips}>
 				{covering.length === 0 && (
@@ -316,7 +327,7 @@ const NvmTagSection: React.FC<{ start: number; end: number }> = ({ start, end })
 					</div>
 				))}
 			</details>
-		</div>
+		</details>
 	);
 };
 

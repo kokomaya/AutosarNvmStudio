@@ -61,6 +61,13 @@ export class AnnotationService {
 			case "removeBookmark":
 				set.bookmarks = set.bookmarks.filter(b => b.id !== cmd.id);
 				break;
+			case "renameBookmark": {
+				const bm = set.bookmarks.find(b => b.id === cmd.id);
+				if (bm) {
+					bm.label = cmd.label;
+				}
+				break;
+			}
 			case "createTag":
 				if (!set.tags.some(t => t.label === cmd.label)) {
 					set.tags.push({ id: newId("tag"), label: cmd.label, color: cmd.color });

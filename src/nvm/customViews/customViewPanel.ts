@@ -142,7 +142,7 @@ export class NvmCustomViewsPanel extends Disposable implements vscode.WebviewVie
 			return;
 		}
 		for (const messaging of this.registry.getMessagingByUri(doc.uri)) {
-			messaging.sendEvent({ type: MessageType.GoToOffset, offset });
+			messaging.sendEvent({ type: MessageType.RevealNvmOffset, offset });
 		}
 	}
 

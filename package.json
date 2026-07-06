@@ -281,6 +281,12 @@
         "icon": "$(trash)"
       },
       {
+        "command": "hexEditor.nvm.renameBookmark",
+        "category": "NVM",
+        "title": "Rename Bookmark",
+        "icon": "$(edit)"
+      },
+      {
         "command": "hexEditor.nvm.exportReport",
         "category": "NVM",
         "title": "Export Report…"
@@ -665,6 +671,10 @@
           "when": "false"
         },
         {
+          "command": "hexEditor.nvm.renameBookmark",
+          "when": "false"
+        },
+        {
           "command": "hexEditor.nvm.addBookmarkHere",
           "when": "hexEditor:isActive"
         },
@@ -732,6 +742,11 @@
         {
           "command": "hexEditor.nvm.openNoteNode",
           "when": "view == hexEditor.nvmStudio && viewItem == note",
+          "group": "inline@1"
+        },
+        {
+          "command": "hexEditor.nvm.renameBookmark",
+          "when": "view == hexEditor.nvmStudio && viewItem == bookmark",
           "group": "inline@1"
         },
         {

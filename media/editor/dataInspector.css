@@ -213,6 +213,8 @@
 	letter-spacing: 0.04em;
 	font-weight: 600;
 	opacity: 0.8;
+	cursor: pointer;
+	user-select: none;
 }
 
 .nvmTagEmpty {

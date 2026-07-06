@@ -176,40 +176,64 @@ export interface NvmFieldRange {
 	block: NvmBlockInfo;
 }
 
+/**
+ * Flatten a set of NVM blocks into colored attribute ranges, sorted by start
+ * offset. Shared by the {@link nvmFieldRanges} selector and the imperative
+ * {@link findNvmFieldAt} lookup so a `RevealNvmOffset` jump resolves the same
+ * block/unit a real byte click would (see `dataDisplay.tsx` click handlers).
+ */
+export const deriveNvmFieldRanges = (blocks: NvmBlockInfo[]): NvmFieldRange[] => {
+	const ranges: NvmFieldRange[] = [];
+	for (const block of blocks) {
+		const fields = block.fields?.length
+			? block.fields
+			: [{ name: block.name ?? block.id, kind: "payload", offset: block.offset, length: block.length }];
+		for (const f of fields) {
+			if (f.length <= 0) {
+				continue;
+			}
+			ranges.push({
+				start: f.offset,
+				end: f.offset + f.length,
+				kind: f.kind,
+				fieldName: f.name,
+				color: (f as { color?: string }).color,
+				unit: (f as { unit?: string }).unit ?? block.id,
+				link: (f as { link?: { targetOffset: number; label?: string } }).link,
+				block,
+			});
+		}
+	}
+	ranges.sort((a, b) => a.start - b.start || a.end - b.end);
+	return ranges;
+};
+
+/**
+ * Imperative lookup of the NVM field covering a byte offset, resolved against the
+ * latest pushed blocks (outside Recoil, for message handlers). Returns the field
+ * whose [start, end) range contains `offset`, or undefined.
+ */
+const findNvmFieldAt = (offset: number): NvmFieldRange | undefined =>
+	deriveNvmFieldRanges(latestNvmBlocks).find(r => offset >= r.start && offset < r.end);
+
 /** All NVM field ranges across every block, sorted by start offset. */
 export const nvmFieldRanges = selector<NvmFieldRange[]>({
 	key: "nvmFieldRanges",
-	get: ({ get }) => {
-		const blocks = get(nvmBlocksAtom);
-		const ranges: NvmFieldRange[] = [];
-		for (const block of blocks) {
-			const fields = block.fields?.length
-				? block.fields
-				: [{ name: block.name ?? block.id, kind: "payload", offset: block.offset, length: block.length }];
-			for (const f of fields) {
-				if (f.length <= 0) {
-					continue;
-				}
-				ranges.push({
-					start: f.offset,
-					end: f.offset + f.length,
-					kind: f.kind,
-					fieldName: f.name,
-					color: (f as { color?: string }).color,
-					unit: (f as { unit?: string }).unit ?? block.id,
-					link: (f as { link?: { targetOffset: number; label?: string } }).link,
-					block,
-				});
-			}
-		}
-		ranges.sort((a, b) => a.start - b.start || a.end - b.end);
-		return ranges;
-	},
+	get: ({ get }) => deriveNvmFieldRanges(get(nvmBlocksAtom)),
 });
 
 export const selectedNvmBlockAtom = atom<NvmBlockInfo | undefined>({
 	key: "selectedNvmBlockAtom",
 	default: undefined,
+	effects_UNSTABLE: [
+		fx => {
+			// An NVM panel jump selects the block owning the target byte, so the data
+			// inspector decodes it immediately (mirrors a real byte click).
+			registerHandler(MessageType.RevealNvmOffset, msg => {
+				fx.setSelf(findNvmFieldAt(msg.offset)?.block);
+			});
+		},
+	],
 });
 
 /**
@@ -220,6 +244,13 @@ export const selectedNvmBlockAtom = atom<NvmBlockInfo | undefined>({
 export const selectedNvmUnitAtom = atom<string | undefined>({
 	key: "selectedNvmUnitAtom",
 	default: undefined,
+	effects_UNSTABLE: [
+		fx => {
+			registerHandler(MessageType.RevealNvmOffset, msg => {
+				fx.setSelf(findNvmFieldAt(msg.offset)?.unit);
+			});
+		},
+	],
 });
 
 export const showReadonlyWarningForEl = atom<HTMLElement | null>({
@@ -374,6 +405,12 @@ export const offset = atom({
 			});
 
 			registerHandler(MessageType.GoToOffset, msg => {
+				const s = fx.getLoadable(columnWidth).getValue();
+				vscode.setState({ ...vscode.getState(), offset: msg.offset });
+				fx.setSelf(startOfRowContainingByte(msg.offset, s));
+			});
+
+			registerHandler(MessageType.RevealNvmOffset, msg => {
 				const s = fx.getLoadable(columnWidth).getValue();
 				vscode.setState({ ...vscode.getState(), offset: msg.offset });
 				fx.setSelf(startOfRowContainingByte(msg.offset, s));

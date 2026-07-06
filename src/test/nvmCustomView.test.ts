@@ -245,10 +245,17 @@ describe("NVM custom view (whole-block, fingerprint grouping)", () => {
 
 			const gA = r.groups[0];
 			expect(gA.matchedBlocks).to.equal(2);
-			// Nested Info.Version is flattened into its own column.
-			expect(gA.columns.map(c => c.key)).to.deep.equal(["Reason", "Counter", "Info.Version"]);
+			// Nested Info.Version is flattened into its own column; Reason carries an
+			// enum label, so it splits into an id column + a "Reason Name" column.
+			expect(gA.columns.map(c => c.key)).to.deep.equal([
+				"Reason",
+				"Reason#name",
+				"Counter",
+				"Info.Version",
+			]);
 			expect(gA.rows.map(row => row.blockLabel)).to.deep.equal(["Record0", "Record1"]);
 			// Cell text + click-to-reveal offset.
+			expect(gA.rows[0].cells["Reason#name"].text).to.equal("PowerOn");
 			expect(gA.rows[0].cells["Counter"].text).to.equal("1955 ms");
 			expect(gA.rows[0].cells["Info.Version"].text).to.equal("1.2.3");
 			expect(gA.rows[0].cells["Reason"].offset).to.equal(0x100);
@@ -256,6 +263,36 @@ describe("NVM custom view (whole-block, fingerprint grouping)", () => {
 			const gB = r.groups[1];
 			expect(gB.columns.map(c => c.label)).to.deep.equal(["EventId", "Status"]);
 			expect(gB.rows.map(row => row.blockLabel)).to.deep.equal(["DemBlock0", "DemBlock1"]);
+		});
+
+		it("splits a field with an enum label into an id column and a name column", () => {
+			// An event-id field carries both a numeric value and a resolved enum
+			// name. It must render as TWO columns: the raw id, and its symbol name.
+			const d0 = block("d0", "Dem0", 0, "0x1", [
+				leaf("EventId", 0, 4, { enumLabel: "DEM_TIMEOUT" }),
+				leaf("Status", 4, "0x2B", { hex: "0x2B" }),
+			]);
+			const d1 = block("d1", "Dem1", 0x40, "0x2", [
+				leaf("EventId", 0x40, 9, { enumLabel: "DEM_OVERVOLTAGE" }),
+				leaf("Status", 0x44, "0x00", { hex: "0x00" }),
+			]);
+			const r = resolveCustomView(view([{ by: "nameGlob", value: "Dem*" }]), [d0, d1]);
+			const g = r.groups[0];
+			// EventId → id column + name column; Status (no enum) stays single.
+			expect(g.columns.map(c => c.key)).to.deep.equal(["EventId", "EventId#name", "Status"]);
+			expect(g.columns.map(c => c.label)).to.deep.equal([
+				"EventId",
+				"EventId Name",
+				"Status",
+			]);
+			const row0 = g.rows.find(x => x.blockLabel === "Dem0")!;
+			expect(row0.cells["EventId"].text).to.equal("4"); // numeric id, NOT the name
+			expect(row0.cells["EventId#name"].text).to.equal("DEM_TIMEOUT");
+			// Both columns reveal the same source bytes on click.
+			expect(row0.cells["EventId"].offset).to.equal(0);
+			expect(row0.cells["EventId#name"].offset).to.equal(0);
+			// A non-enum field is untouched.
+			expect(row0.cells["Status"].text).to.equal("0x2B");
 		});
 
 		it("leaves empty cells for fields absent on some blocks (column union)", () => {

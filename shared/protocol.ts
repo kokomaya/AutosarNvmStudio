@@ -19,6 +19,7 @@ export const enum MessageType {
 	SetNvmBlocks,
 	StashDisplayedOffset,
 	GoToOffset,
+	RevealNvmOffset,
 	SetHoveredByte,
 	SetFocusedByte,
 	SetFocusedByteRange,
@@ -259,8 +260,9 @@ export interface SetNvmAnnotationsMessage {
 
 /** A mutation the webview asks the host to perform on annotations. */
 export type NvmAnnotationCommand =
-	| { kind: "addBookmark"; offset: number; label?: string }
+	| { kind: "addBookmark"; offset: number; label?: string; prompt?: boolean }
 	| { kind: "removeBookmark"; id: string }
+	| { kind: "renameBookmark"; id: string; label?: string }
 	| { kind: "createTag"; label: string; color?: string }
 	| { kind: "renameTag"; tagId: string; label: string }
 	| { kind: "recolorTag"; tagId: string; color: string }
@@ -376,6 +378,17 @@ export interface GoToOffsetMessage {
 	offset: number;
 }
 
+/**
+ * NVM panel jump: unlike {@link GoToOffsetMessage} (scroll only), this replicates
+ * a real byte click — it scrolls to, focuses, selects and briefly flashes the
+ * byte, and selects its owning NVM block so the data inspector decodes it. Sent
+ * by the Custom View / Blocks Table / NVM Studio tree jump affordances.
+ */
+export interface RevealNvmOffsetMessage {
+	type: MessageType.RevealNvmOffset;
+	offset: number;
+}
+
 /** Focuses a byte in the editor. */
 export interface SetFocusedByteMessage {
 	type: MessageType.SetFocusedByte;
@@ -444,6 +457,7 @@ export type ToWebviewMessage =
 	| SetNvmAnnotationsMessage
 	| SetNvmCustomViewsMessage
 	| GoToOffsetMessage
+	| RevealNvmOffsetMessage
 	| SetEditsMessage
 	| SetFocusedByteMessage
 	| SetFocusedByteRangeMessage

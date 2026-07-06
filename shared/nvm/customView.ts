@@ -220,6 +220,35 @@ export function nodeText(node: NvmDecodedNode | undefined): string {
 	return node.unit ? `${text} ${node.unit}` : text;
 }
 
+/**
+ * Like {@link nodeText} but never uses the enum label — always the numeric/raw
+ * value. Used to render the "id" column of a field that also has a resolved enum
+ * name, so the raw id and its symbolic name occupy separate columns.
+ */
+export function nodeValueText(node: NvmDecodedNode | undefined): string {
+	if (!node) {
+		return "";
+	}
+	let text: string;
+	if (node.value !== undefined) {
+		text = typeof node.value === "boolean" ? (node.value ? "true" : "false") : String(node.value);
+	} else if (node.hex !== undefined) {
+		text = node.hex;
+	} else if (node.raw !== undefined) {
+		text = String(node.raw);
+	} else {
+		text = "";
+	}
+	return node.unit ? `${text} ${node.unit}` : text;
+}
+
+/**
+ * Suffix marking a column that carries the *enum name* of a field whose numeric
+ * id lives in the sibling column keyed by the bare path. Kept internal to the
+ * column model so `#` never collides with a real (dot-separated) field path.
+ */
+const NAME_COLUMN_SUFFIX = "#name";
+
 /** Best display label for a block (name, else identity label, else hex offset). */
 function blockLabel(block: NvmBlockInfo): string {
 	return block.name ?? block.identity?.label ?? `0x${block.offset.toString(16).toUpperCase()}`;
@@ -247,6 +276,25 @@ export function nameFamilyGlob(name: string): string {
  * fields are flattened so nested-struct members become their own columns.
  */
 function unionColumns(blocks: readonly NvmBlockInfo[]): ResolvedColumn[] {
+	// First pass: which leaf paths ever carry an enum label (in ANY block)? Such
+	// fields get split into an id column + a name column so the numeric value and
+	// its symbolic name are both visible. Purely value-shape driven — no vendor
+	// knowledge; any field with a resolved enum name is split the same way.
+	const enumPaths = new Set<string>();
+	const collectEnum = (nodes: readonly NvmDecodedNode[] | undefined, prefix: string): void => {
+		for (const n of nodes ?? []) {
+			const path = prefix ? `${prefix}.${n.name}` : n.name;
+			if (n.children && n.children.length > 0) {
+				collectEnum(n.children, path);
+			} else if (n.enumLabel !== undefined) {
+				enumPaths.add(path);
+			}
+		}
+	};
+	for (const b of blocks) {
+		collectEnum(b.decoded, "");
+	}
+
 	const seen = new Set<string>();
 	const columns: ResolvedColumn[] = [];
 	const walk = (nodes: readonly NvmDecodedNode[] | undefined, prefix: string): void => {
@@ -257,6 +305,9 @@ function unionColumns(blocks: readonly NvmBlockInfo[]): ResolvedColumn[] {
 			} else if (!seen.has(path)) {
 				seen.add(path);
 				columns.push({ key: path, label: n.name });
+				if (enumPaths.has(path)) {
+					columns.push({ key: `${path}${NAME_COLUMN_SUFFIX}`, label: `${n.name} Name` });
+				}
 			}
 		}
 	};
@@ -273,10 +324,22 @@ function resolveGroup(selector: BlockSelector, blocks: readonly NvmBlockInfo[]):
 	const rows: ResolvedRow[] = matched.map(block => {
 		const cells: Record<string, ResolvedCell> = {};
 		for (const col of columns) {
-			const node = findNode(block.decoded, col.key.split("."));
-			cells[col.key] = node
-				? { text: nodeText(node), offset: node.offset, length: node.length }
-				: { text: "" };
+			const isNameCol = col.key.endsWith(NAME_COLUMN_SUFFIX);
+			const path = isNameCol ? col.key.slice(0, -NAME_COLUMN_SUFFIX.length) : col.key;
+			const node = findNode(block.decoded, path.split("."));
+			if (!node) {
+				cells[col.key] = { text: "" };
+			} else if (isNameCol) {
+				// The symbolic name column of an enum field (paired with its id column).
+				cells[col.key] = { text: node.enumLabel ?? "", offset: node.offset, length: node.length };
+			} else {
+				// A split field's id column shows the numeric value; everything else
+				// keeps the default (enum-preferring) rendering.
+				const text = columns.some(c => c.key === `${path}${NAME_COLUMN_SUFFIX}`)
+					? nodeValueText(node)
+					: nodeText(node);
+				cells[col.key] = { text, offset: node.offset, length: node.length };
+			}
 		}
 		return { blockLabel: blockLabel(block), blockOffset: block.offset, cells };
 	});
