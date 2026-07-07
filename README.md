@@ -4,8 +4,6 @@ An internal fork of Microsoft's [vscode-hexeditor](https://github.com/microsoft/
 extended into a config-driven, vendor-agnostic, AI-assisted tool for analyzing AUTOSAR NVM
 (non-volatile memory) dumps — while keeping the original general-purpose hex editor intact.
 
-Not published to the VS Code Marketplace; install the built `.vsix` for internal use (see
-[CONTRIBUTING.md](CONTRIBUTING.md)).
 
 ## Base hex editor features
 
@@ -43,9 +41,7 @@ can switch it to a hover popup, or a dedicated activity-bar sidebar entry (combi
 The **NVM Studio** activity-bar container adds AUTOSAR NVM dump analysis on top of the hex
 editor. The core is deliberately **vendor-blind and config-driven** — it has zero built-in
 knowledge of any vendor's on-flash layout; everything comes from `*.nvmlayout.json` descriptors,
-declared source files (ARXML, `Fee_Lcfg.c`, …), and optional pluggable engines. See
-[docs/nvm-layout-providers.md](docs/nvm-layout-providers.md) for the full architecture and a
-config walkthrough, and [docs/nvm-context.md](docs/nvm-context.md) for background/status.
+declared source files (ARXML, `Fee_Lcfg.c`, …), and optional pluggable engines.
 
 Highlights:
 
@@ -67,8 +63,7 @@ Highlights:
 - **Ask NVM AI** — a `@nvm` chat participant plus nine Language Model Tools
   (`#nvmListBlocks`, `#nvmSearchBlocks`, `#nvmAnalyzeBlock`, `#nvmGetDecoded`, `#nvmReadBytes`,
   `#nvmListAnnotations`, `#nvmCreateNote`, `#nvmExportReport`, `#nvmRiskDetection`) so Copilot (or
-  any LM-tool-aware agent) can query the active dump. See
-  [docs/nvm-ai-capabilities.md](docs/nvm-ai-capabilities.md).
+  any LM-tool-aware agent) can query the active dump.
 - **Engine management** — install/manage external layout engines (`NVM: Install Engine…`,
   `NVM: Manage Engines…`), gated behind Workspace Trust, the
   `hexeditor.nvm.allowExternalEngines` setting, and a per-file confirmation.
@@ -79,17 +74,11 @@ Highlights:
 
 ### NVM settings
 
-| Setting | Purpose |
-|---|---|
-| `hexeditor.autoLoadArxml` | Auto-load an ARXML file from the dump's folder (legacy fallback when no `*.nvmlayout.json` matches). |
-| `hexeditor.nvm.allowExternalEngines` | Master switch for running layout engine scripts (desktop + trusted workspace only). |
-| `hexeditor.nvm.annotationStorage` | `sidecar` (portable file next to the dump) or `workspaceState`. |
-| `hexeditor.nvm.workspaceRoots` | Root folders searched recursively for dependency files. |
-| `hexeditor.nvm.fileChoices` | Remembered dependency-file disambiguation choices (auto-managed). |
+| Setting                              | Purpose                                                                                              |
+|--------------------------------------|------------------------------------------------------------------------------------------------------|
+| `hexeditor.autoLoadArxml`            | Auto-load an ARXML file from the dump's folder (legacy fallback when no `*.nvmlayout.json` matches). |
+| `hexeditor.nvm.allowExternalEngines` | Master switch for running layout engine scripts (desktop + trusted workspace only).                  |
+| `hexeditor.nvm.annotationStorage`    | `sidecar` (portable file next to the dump) or `workspaceState`.                                      |
+| `hexeditor.nvm.workspaceRoots`       | Root folders searched recursively for dependency files.                                              |
+| `hexeditor.nvm.fileChoices`          | Remembered dependency-file disambiguation choices (auto-managed).                                    |
 
-## Known Issues
-
-This is an internal fork without a public issue tracker; report problems to the maintainer
-directly (see [SECURITY.md](SECURITY.md) for vulnerabilities specifically). For issues in the
-*upstream* general-purpose hex editor, the original project tracks them at
-https://github.com/microsoft/vscode-hexeditor/issues.
