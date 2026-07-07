@@ -41,12 +41,12 @@ export function registerNvmBlocksView(
 	// One command per arrangement so they can populate a real dropdown submenu
 	// (view-title) instead of a command-palette-style quick pick.
 	const arrangeCommands = ARRANGEMENTS.map(a =>
-		vscode.commands.registerCommand(`hexEditor.nvm.blocks.arrange.${a.id}`, async () => {
+		vscode.commands.registerCommand(`nvmStudio.nvm.blocks.arrange.${a.id}`, async () => {
 			await config.setArrangementId(a.id);
 		}),
 	);
 
-	const filter = vscode.commands.registerCommand("hexEditor.nvm.blocks.filter", async () => {
+	const filter = vscode.commands.registerCommand("nvmStudio.nvm.blocks.filter", async () => {
 		const value = await vscode.window.showInputBox({
 			title: vscode.l10n.t("Filter blocks"),
 			prompt: vscode.l10n.t("Match block name, id or attribute (leave empty to clear)"),
@@ -60,7 +60,7 @@ export function registerNvmBlocksView(
 	});
 
 	const clearFilter = vscode.commands.registerCommand(
-		"hexEditor.nvm.blocks.clearFilter",
+		"nvmStudio.nvm.blocks.clearFilter",
 		() => {
 			provider.setFilter("");
 			updateMeta();
@@ -68,7 +68,7 @@ export function registerNvmBlocksView(
 	);
 
 	const configureColumns = vscode.commands.registerCommand(
-		"hexEditor.nvm.blocks.configureColumns",
+		"nvmStudio.nvm.blocks.configureColumns",
 		async () => {
 			const available = discoverAttributeKeys(provider.blocks());
 			if (available.length === 0) {
@@ -96,7 +96,7 @@ export function registerNvmBlocksView(
 		},
 	);
 
-	const refresh = vscode.commands.registerCommand("hexEditor.nvm.blocks.refresh", () =>
+	const refresh = vscode.commands.registerCommand("nvmStudio.nvm.blocks.refresh", () =>
 		provider.refresh(),
 	);
 

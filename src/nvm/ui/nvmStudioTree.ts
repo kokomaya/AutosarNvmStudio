@@ -80,7 +80,7 @@ export class NvmStudioTree implements vscode.TreeDataProvider<StudioNode> {
 			(node.kind === "bookmark" || node.kind === "tagAssignment" || node.kind === "note")
 		) {
 			item.command = {
-				command: "hexEditor.nvm.jumpTo",
+				command: "nvmStudio.nvm.jumpTo",
 				title: "Jump",
 				arguments: [node.offset],
 			};
@@ -179,7 +179,7 @@ export function registerNvmStudioView(
 		}
 	};
 
-	const jumpTo = vscode.commands.registerCommand("hexEditor.nvm.jumpTo", (offset: number) => {
+	const jumpTo = vscode.commands.registerCommand("nvmStudio.nvm.jumpTo", (offset: number) => {
 		const doc = registry.activeDocument;
 		if (!doc || typeof offset !== "number") {
 			return;
@@ -190,7 +190,7 @@ export function registerNvmStudioView(
 	});
 
 	const openNote = vscode.commands.registerCommand(
-		"hexEditor.nvm.openNoteNode",
+		"nvmStudio.nvm.openNoteNode",
 		async (node: StudioNode) => {
 			const doc = registry.activeDocument;
 			if (!doc || !node?.id) {
@@ -204,7 +204,7 @@ export function registerNvmStudioView(
 	);
 
 	const renameBookmark = vscode.commands.registerCommand(
-		"hexEditor.nvm.renameBookmark",
+		"nvmStudio.nvm.renameBookmark",
 		async (node: StudioNode) => {
 			const doc = registry.activeDocument;
 			if (!doc || node?.kind !== "bookmark" || !node.id) {
@@ -230,7 +230,7 @@ export function registerNvmStudioView(
 	);
 
 	const deleteNode = vscode.commands.registerCommand(
-		"hexEditor.nvm.deleteAnnotation",
+		"nvmStudio.nvm.deleteAnnotation",
 		async (node: StudioNode) => {
 			const doc = registry.activeDocument;
 			if (!doc || !node?.id) {

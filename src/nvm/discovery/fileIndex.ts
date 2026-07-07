@@ -7,7 +7,7 @@
  * The core's built-in lookup only searches the dump folder + `./conf` + `../conf`.
  * When a declared source (e.g. `Fee_Lcfg.c`, `Dem_Lcfg.h`) lives elsewhere under a
  * large project tree, this resolver finds it by recursively indexing the user's
- * configured **workspace roots** (`hexeditor.nvm.workspaceRoots`). When a base
+ * configured **workspace roots** (`nvmstudio.nvm.workspaceRoots`). When a base
  * name matches several files, the user disambiguates once and the choice is
  * persisted (see {@link DependencyStore}) and reused.
  *
@@ -183,11 +183,45 @@ export class DependencyResolver {
 
 /** Read the configured workspace roots from settings. */
 export function configuredRoots(): string[] {
-	return (
-		vscode.workspace
-			.getConfiguration("hexeditor")
-			.get<string[]>("nvm.workspaceRoots", []) ?? []
-	);
+	const cfg = vscode.workspace.getConfiguration();
+	const next = cfg.get<string[]>("nvmstudio.nvm.workspaceRoots", []);
+	if (Array.isArray(next) && next.length > 0) {
+		return next;
+	}
+	// Backward compatibility with the previous setting id.
+	return cfg.get<string[]>("hexeditor.nvm.workspaceRoots", []) ?? [];
+}
+
+/** Expand `${workspaceFolder}` / `${workspaceFolder:Name}` in a configured path. */
+function expandWorkspaceVars(raw: string): string {
+	const folders = vscode.workspace.workspaceFolders ?? [];
+	const first = folders[0]?.uri.fsPath ?? "";
+	let p = raw.replace(/\$\{workspaceFolder\}/g, first);
+	p = p.replace(/\$\{workspaceFolder:([^}]+)\}/g, (_m, name: string) => {
+		const f = folders.find(w => w.name === name);
+		return f ? f.uri.fsPath : "";
+	});
+	return p;
+}
+
+/**
+ * Read the configured global layout-descriptor roots (`nvmstudio.nvm.layoutRoots`),
+ * expanded to fsPaths. These folders are scanned directly for `*.nvmlayout.json`
+ * so descriptors can live in a shared location instead of next to each dump.
+ */
+export function configuredLayoutRoots(): string[] {
+	const raw = vscode.workspace.getConfiguration().get<string[]>("nvmstudio.nvm.layoutRoots", []) ?? [];
+	const out: string[] = [];
+	for (const r of raw) {
+		if (!r) {
+			continue;
+		}
+		const p = expandWorkspaceVars(r);
+		if (p) {
+			out.push(p);
+		}
+	}
+	return out;
 }
 
 /**

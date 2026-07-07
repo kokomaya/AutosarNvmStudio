@@ -112,7 +112,7 @@ export function registerReportPreview(
 	annotations: AnnotationService,
 ): vscode.Disposable[] {
 	return [
-		vscode.commands.registerCommand("hexEditor.nvm.openReportPreview", () =>
+		vscode.commands.registerCommand("nvmStudio.nvm.openReportPreview", () =>
 			openReportPreview(registry, annotations),
 		),
 	];

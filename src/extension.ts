@@ -17,16 +17,17 @@ import { registerChatParticipant } from "./nvm/ai/chatParticipant";
 import { registerLmTools } from "./nvm/ai/lmTools";
 import { NvmCapabilities } from "./nvm/ai/nvmCapabilities";
 import { registerShowCapabilities } from "./nvm/ai/showCapabilities";
-import { invalidateDependencyResolver } from "./nvm/discovery/fileIndex";
-import { registerReselectDependency } from "./nvm/discovery/reselectCommand";
 import { registerAnnotationCommands } from "./nvm/annotations/annotationCommands";
 import { AnnotationService } from "./nvm/annotations/annotationService";
 import { parseArxmlFile } from "./nvm/arxmlParser";
 import { mapBlocksToBuffer } from "./nvm/blockMapper";
 import { registerNvmBlocksTable } from "./nvm/blocks/blockTablePanel";
 import { registerNvmBlocksView } from "./nvm/blocks/nvmBlocksView";
-import { CustomViewService } from "./nvm/customViews/customViewService";
 import { registerNvmCustomViewsPanel } from "./nvm/customViews/customViewPanel";
+import { CustomViewService } from "./nvm/customViews/customViewService";
+import { registerConfigInstallCommand } from "./nvm/discovery/configInstall";
+import { invalidateDependencyResolver } from "./nvm/discovery/fileIndex";
+import { registerReselectDependency } from "./nvm/discovery/reselectCommand";
 import { registerEngineCommands } from "./nvm/engines/engineCommands";
 import { registerReportCommands } from "./nvm/report/reportCommands";
 import { registerReportPreview } from "./nvm/report/reportPanel";
@@ -73,17 +74,17 @@ export async function activate(context: vscode.ExtensionContext) {
 	const telemetryReporter = new TelemetryReporter(configValues.aiKey);
 	context.subscriptions.push(telemetryReporter);
 	const openWithCommand = vscode.commands.registerCommand(
-		"hexEditor.openFile",
+		"nvmStudio.openFile",
 		reopenWithHexEditor,
 	);
-	const goToOffsetCommand = vscode.commands.registerCommand("hexEditor.goToOffset", () => {
+	const goToOffsetCommand = vscode.commands.registerCommand("nvmStudio.goToOffset", () => {
 		const first = registry.activeMessaging[Symbol.iterator]().next();
 		if (first.value) {
 			showGoToOffset(first.value);
 		}
 	});
 	const selectBetweenOffsetsCommand = vscode.commands.registerCommand(
-		"hexEditor.selectBetweenOffsets",
+		"nvmStudio.selectBetweenOffsets",
 		() => {
 			const first = registry.activeMessaging[Symbol.iterator]().next();
 			if (first.value) {
@@ -92,14 +93,14 @@ export async function activate(context: vscode.ExtensionContext) {
 		},
 	);
 
-	const copyAsCommand = vscode.commands.registerCommand("hexEditor.copyAs", () => {
+	const copyAsCommand = vscode.commands.registerCommand("nvmStudio.copyAs", () => {
 		const first = registry.activeMessaging[Symbol.iterator]().next();
 		if (first.value) {
 			copyAs(first.value);
 		}
 	});
 
-	const switchEditModeCommand = vscode.commands.registerCommand("hexEditor.switchEditMode", () => {
+	const switchEditModeCommand = vscode.commands.registerCommand("nvmStudio.switchEditMode", () => {
 		if (registry.activeDocument) {
 			registry.activeDocument.editMode =
 				registry.activeDocument.editMode === HexDocumentEditOp.Insert
@@ -108,7 +109,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		}
 	});
 
-	const copyOffsetAsHex = vscode.commands.registerCommand("hexEditor.copyOffsetAsHex", () => {
+	const copyOffsetAsHex = vscode.commands.registerCommand("nvmStudio.copyOffsetAsHex", () => {
 		if (registry.activeDocument) {
 			const focused = registry.activeDocument.selectionState.focused;
 			if (focused !== undefined) {
@@ -117,7 +118,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		}
 	});
 
-	const copyOffsetAsDec = vscode.commands.registerCommand("hexEditor.copyOffsetAsDec", () => {
+	const copyOffsetAsDec = vscode.commands.registerCommand("nvmStudio.copyOffsetAsDec", () => {
 		if (registry.activeDocument) {
 			const focused = registry.activeDocument.selectionState.focused;
 			if (focused !== undefined) {
@@ -127,7 +128,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	});
 
 	const compareSelectedCommand = vscode.commands.registerCommand(
-		"hexEditor.compareSelected",
+		"nvmStudio.compareSelected",
 		async (...args) => {
 			if (args.length !== 2 && !(args[1] instanceof Array)) {
 				return;
@@ -140,7 +141,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		},
 	);
 
-	const loadNvmArxmlCommand = vscode.commands.registerCommand("hexEditor.loadNvmArxml", async () => {
+	const loadNvmArxmlCommand = vscode.commands.registerCommand("nvmStudio.loadNvmArxml", async () => {
 		if (!registry.activeDocument) {
 			vscode.window.showInformationMessage("No active hex document to associate ARXML with.");
 			return;
@@ -179,6 +180,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(compareSelectedCommand);
 	context.subscriptions.push(loadNvmArxmlCommand);
 	context.subscriptions.push(...registerEngineCommands(context));
+	context.subscriptions.push(registerConfigInstallCommand());
 	const annotationService = new AnnotationService(context);
 	const customViewService = new CustomViewService(context);
 	context.subscriptions.push(...registerAnnotationCommands(registry, annotationService));
@@ -201,7 +203,10 @@ export async function activate(context: vscode.ExtensionContext) {
 	// Rebuild the dependency index when the configured roots change.
 	context.subscriptions.push(
 		vscode.workspace.onDidChangeConfiguration(e => {
-			if (e.affectsConfiguration("hexeditor.nvm.workspaceRoots")) {
+			if (
+				e.affectsConfiguration("nvmstudio.nvm.workspaceRoots") ||
+				e.affectsConfiguration("hexeditor.nvm.workspaceRoots")
+			) {
 				invalidateDependencyResolver();
 			}
 		}),

@@ -7,10 +7,10 @@ import { HexDecorator } from "../shared/decorators";
 import { FileAccessor } from "../shared/fileAccessor";
 import { HexDiffModel, HexDiffModelBuilder } from "../shared/hexDiffModel";
 import {
-	HexDocumentEdit,
-	HexDocumentEditOp,
-	HexDocumentEditReference,
-	HexDocumentModel,
+    HexDocumentEdit,
+    HexDocumentEditOp,
+    HexDocumentEditReference,
+    HexDocumentModel,
 } from "../shared/hexDocumentModel";
 import { parseQuery } from "../shared/util/uri";
 import { Backup } from "./backup";
@@ -56,7 +56,7 @@ export class HexDocument extends Disposable implements vscode.CustomDocument {
 		telemetryReporter.sendTelemetryEvent("fileOpen", {}, { fileSize: fileSize ?? 0 });
 
 		const maxFileSize =
-			(vscode.workspace.getConfiguration().get("hexeditor.maxFileSize") as number) * 1000000;
+			(vscode.workspace.getConfiguration().get("nvmstudio.maxFileSize") as number) * 1000000;
 		const isLargeFile =
 			!backupId && !accessor.supportsIncremetalAccess && (fileSize ?? 0) > maxFileSize;
 

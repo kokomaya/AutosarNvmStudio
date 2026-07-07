@@ -35,6 +35,7 @@ tools/profiles/**
 dist/nvmcli.js
 server/**
 dist/server/**
+dist/engines/**
 
 # We need the codicon node module included for the fonts + icons to work
 !node_modules/@vscode/codicons/dist

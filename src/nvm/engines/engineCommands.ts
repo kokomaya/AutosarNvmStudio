@@ -38,7 +38,7 @@ async function pickInstallSource(
 export function registerEngineCommands(context: vscode.ExtensionContext): vscode.Disposable[] {
 	const manager = new EngineManager(context);
 
-	const install = vscode.commands.registerCommand("hexEditor.nvm.installEngine", async () => {
+	const install = vscode.commands.registerCommand("nvmStudio.nvm.installEngine", async () => {
 		const ok = await vscode.window.showWarningMessage(
 			SECURITY_NOTE,
 			{ modal: true },
@@ -50,8 +50,9 @@ export function registerEngineCommands(context: vscode.ExtensionContext): vscode
 		try {
 			const installed = await pickInstallSource(manager);
 			if (installed) {
+				const name = installed.manifest.displayName ?? installed.manifest.id;
 				void vscode.window.showInformationMessage(
-					`Installed NVM engine "${installed.manifest.displayName ?? installed.manifest.id}".`,
+					`Installed NVM engine "${name}" (id: ${installed.manifest.id}) to:\n${installed.dir.fsPath}`,
 				);
 			}
 		} catch (e) {
@@ -62,7 +63,7 @@ export function registerEngineCommands(context: vscode.ExtensionContext): vscode
 	});
 
 	const installUrl = vscode.commands.registerCommand(
-		"hexEditor.nvm.installEngineFromUrl",
+		"nvmStudio.nvm.installEngineFromUrl",
 		async () => {
 			const url = await vscode.window.showInputBox({
 				title: "Download NVM engine pack",
@@ -84,7 +85,7 @@ export function registerEngineCommands(context: vscode.ExtensionContext): vscode
 			try {
 				const installed = await manager.installFromUrl(url);
 				void vscode.window.showInformationMessage(
-					`Installed NVM engine "${installed.manifest.id}" from URL.`,
+					`Installed NVM engine "${installed.manifest.id}" from URL to:\n${installed.dir.fsPath}`,
 				);
 			} catch (e) {
 				void vscode.window.showErrorMessage(
@@ -94,7 +95,7 @@ export function registerEngineCommands(context: vscode.ExtensionContext): vscode
 		},
 	);
 
-	const manage = vscode.commands.registerCommand("hexEditor.nvm.manageEngines", async () => {
+	const manage = vscode.commands.registerCommand("nvmStudio.nvm.manageEngines", async () => {
 		const engines = await manager.list();
 		if (engines.length === 0) {
 			void vscode.window.showInformationMessage(

@@ -78,7 +78,7 @@ export function registerAnnotationCommands(
 	registry: HexEditorRegistry,
 	annotations: AnnotationService,
 ): vscode.Disposable[] {
-	const addBookmark = vscode.commands.registerCommand("hexEditor.nvm.addBookmarkHere", async () => {
+	const addBookmark = vscode.commands.registerCommand("nvmStudio.nvm.addBookmarkHere", async () => {
 		const t = resolveTarget(registry);
 		if (!t) {
 			return;
@@ -96,7 +96,7 @@ export function registerAnnotationCommands(
 		await pushAnnotations(registry, annotations, t.document);
 	});
 
-	const addNote = vscode.commands.registerCommand("hexEditor.nvm.addNoteHere", async () => {
+	const addNote = vscode.commands.registerCommand("nvmStudio.nvm.addNoteHere", async () => {
 		const t = resolveTarget(registry);
 		if (!t) {
 			return;
@@ -119,7 +119,7 @@ export function registerAnnotationCommands(
 	});
 
 	const tagSelection = vscode.commands.registerCommand(
-		"hexEditor.nvm.tagSelectionHere",
+		"nvmStudio.nvm.tagSelectionHere",
 		async () => {
 			const t = resolveTarget(registry);
 			if (!t) {
@@ -139,7 +139,7 @@ export function registerAnnotationCommands(
 		},
 	);
 
-	const removeTag = vscode.commands.registerCommand("hexEditor.nvm.removeTagHere", async () => {
+	const removeTag = vscode.commands.registerCommand("nvmStudio.nvm.removeTagHere", async () => {
 		const t = resolveTarget(registry);
 		if (!t) {
 			return;

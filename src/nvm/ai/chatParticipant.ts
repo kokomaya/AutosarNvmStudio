@@ -98,7 +98,7 @@ export function registerChatParticipant(caps: NvmCapabilities): vscode.Disposabl
 	}
 
 	disposables.push(
-		vscode.commands.registerCommand("hexEditor.nvm.openChat", async () => {
+		vscode.commands.registerCommand("nvmStudio.nvm.openChat", async () => {
 			// Prefer opening Copilot Chat addressed to our participant; fall back to
 			// a report-context message if the participant/API is unavailable.
 			const opened = await tryOpenChat("@nvm ");

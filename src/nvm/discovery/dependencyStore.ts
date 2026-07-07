@@ -24,7 +24,7 @@
 import * as vscode from "vscode";
 
 const STATE_KEY = "hexeditor.nvm.fileChoices";
-const SETTING_SECTION = "hexeditor";
+const SETTING_SECTION = "nvmstudio";
 const SETTING_KEY = "nvm.fileChoices";
 
 /** A remembered choice for one base file name. */

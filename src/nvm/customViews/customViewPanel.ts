@@ -11,13 +11,13 @@
  */
 
 import * as vscode from "vscode";
-import { MessageType, NvmBlockInfo } from "../../../shared/protocol";
 import { ResolvedView } from "../../../shared/nvm/customView";
+import { MessageType, NvmBlockInfo } from "../../../shared/protocol";
 import { Disposable } from "../../dispose";
 import { HexDocument } from "../../hexDocument";
 import { HexEditorRegistry } from "../../hexEditorRegistry";
-import { CustomViewService } from "./customViewService";
 import { addBlockToCustomView } from "./addToView";
+import { CustomViewService } from "./customViewService";
 
 /** Messages the webview posts back to the host. */
 type FromPanel =
@@ -214,7 +214,7 @@ export function registerNvmCustomViewsPanel(
 	// Blocks-tree context-menu entry: add the right-clicked block (and its
 	// structural family) to a custom view. The node is the tree's BlockNode.
 	const addBlock = vscode.commands.registerCommand(
-		"hexEditor.nvm.customViews.addBlock",
+		"nvmStudio.nvm.customViews.addBlock",
 		async (node?: { kind?: string; block?: NvmBlockInfo }) => {
 			const doc = registry.activeDocument;
 			if (!doc || node?.kind !== "block" || !node.block) {

@@ -98,7 +98,7 @@ export const CAPABILITY_CATALOG: readonly CapabilityEntry[] = [
 		group: "AI tools (Copilot)",
 		label: "Ask NVM AI",
 		detail: "Open Copilot Chat prefilled with @nvm (edit, then send).",
-		commandId: "hexEditor.nvm.openChat",
+		commandId: "nvmStudio.nvm.openChat",
 	},
 
 	// --- Views ---
@@ -124,13 +124,13 @@ export const CAPABILITY_CATALOG: readonly CapabilityEntry[] = [
 		group: "Annotations",
 		label: "Add bookmark",
 		detail: "Bookmark the focused byte for quick jump.",
-		commandId: "hexEditor.nvm.addBookmarkHere",
+		commandId: "nvmStudio.nvm.addBookmarkHere",
 	},
 	{
 		group: "Annotations",
 		label: "Add note",
 		detail: "Attach a rich Markdown note to the current selection.",
-		commandId: "hexEditor.nvm.addNoteHere",
+		commandId: "nvmStudio.nvm.addNoteHere",
 	},
 
 	// --- Layout & configuration ---

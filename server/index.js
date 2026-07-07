@@ -8,10 +8,13 @@ const path = require("path");
 
 const HOST = process.env.NVM_ENGINE_SERVER_HOST || "127.0.0.1";
 const PORT = Number(process.env.NVM_ENGINE_SERVER_PORT || 7788);
-const DATA_ROOT = path.resolve(
-	process.env.NVM_ENGINE_REGISTRY_HOME || path.join(process.cwd(), "engine-registry-data"),
-);
+// Single, unified data root. Everything lives under it:
+//   <root>/engines/<id>/<version>/   engine packs
+//   <root>/conf/                     layout descriptors (*.nvmlayout.json)
+// Root = NVM_ENGINE_REGISTRY_HOME, or the current working directory.
+const DATA_ROOT = path.resolve(process.env.NVM_ENGINE_REGISTRY_HOME || process.cwd());
 const ENGINE_ROOT = path.join(DATA_ROOT, "engines");
+const CONF_ROOT = path.join(DATA_ROOT, "conf");
 const ADMIN_TOKEN = process.env.NVM_ENGINE_SERVER_ADMIN_TOKEN || "";
 const MAX_BODY_BYTES = 10 * 1024 * 1024;
 
@@ -56,6 +59,19 @@ function getEnginePaths(id, version) {
 		engineFile: path.join(dir, "engine.js"),
 		manifestFile: path.join(dir, "engine.json"),
 	};
+}
+
+async function resolveEngineScriptFile(id, version) {
+	const { dir, engineFile, manifestFile } = getEnginePaths(id, version);
+	try {
+		const manifest = await readJson(manifestFile);
+		if (typeof manifest.entry === "string" && manifest.entry.trim().length > 0) {
+			return path.join(dir, path.basename(manifest.entry.trim()));
+		}
+	} catch {
+		// Fall back to the default file name below.
+	}
+	return engineFile;
 }
 
 async function readJson(filePath) {
@@ -190,6 +206,19 @@ async function publishEngine(req, res, id, version) {
 	});
 }
 
+async function listConfigs() {
+	await ensureDir(CONF_ROOT);
+	const entries = await fsp.readdir(CONF_ROOT, { withFileTypes: true });
+	const out = [];
+	for (const dirent of entries) {
+		if (dirent.isFile() && dirent.name.toLowerCase().endsWith(".nvmlayout.json")) {
+			out.push(dirent.name);
+		}
+	}
+	out.sort();
+	return out;
+}
+
 async function requestHandler(req, res) {
 	const method = req.method || "GET";
 	const url = new URL(req.url || "/", getBaseUrl(req));
@@ -209,6 +238,37 @@ async function requestHandler(req, res) {
 		if (method === "GET" && pathname === "/v1/engines") {
 			const engines = await listEngines();
 			return json(res, 200, { engines });
+		}
+
+		if (method === "GET" && pathname === "/v1/configs") {
+			const configs = await listConfigs();
+			return json(res, 200, {
+				configs: configs.map(name => ({
+					name,
+					downloadUrl: `${getBaseUrl(req)}/v1/configs/${encodeURIComponent(name)}`,
+				})),
+			});
+		}
+
+		const configFileMatch = pathname.match(/^\/v1\/configs\/([a-zA-Z0-9._-]+\.nvmlayout\.json)$/);
+		if (method === "GET" && configFileMatch) {
+			const name = configFileMatch[1];
+			if (name.includes("..") || name.includes("/") || name.includes("\\")) {
+				return json(res, 400, { error: "Invalid config name." });
+			}
+			const file = path.join(CONF_ROOT, name);
+			try {
+				const stat = await fsp.stat(file);
+				res.writeHead(200, {
+					"Content-Type": "application/json; charset=utf-8",
+					"Content-Length": stat.size,
+					"Cache-Control": "public, max-age=300",
+				});
+				fs.createReadStream(file).pipe(res);
+				return;
+			} catch {
+				return json(res, 404, { error: `Config ${name} not found.` });
+			}
 		}
 
 		const latestMatch = pathname.match(/^\/v1\/engines\/([a-zA-Z0-9._-]+)\/latest$/);
@@ -247,7 +307,7 @@ async function requestHandler(req, res) {
 		if (method === "GET" && engineFileMatch) {
 			const id = cleanSegment(engineFileMatch[1], "id");
 			const version = cleanSegment(engineFileMatch[2], "version");
-			const { engineFile } = getEnginePaths(id, version);
+			const engineFile = await resolveEngineScriptFile(id, version);
 			try {
 				const stat = await fsp.stat(engineFile);
 				res.writeHead(200, {
@@ -280,7 +340,7 @@ function createServer() {
 }
 
 function startServer() {
-	ensureDir(ENGINE_ROOT)
+	Promise.all([ensureDir(ENGINE_ROOT), ensureDir(CONF_ROOT)])
 		.then(() => {
 			const server = createServer();
 			server.listen(PORT, HOST, () => {

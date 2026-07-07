@@ -37,7 +37,7 @@ export function registerReportCommands(
 	registry: HexEditorRegistry,
 	annotations: AnnotationService,
 ): vscode.Disposable[] {
-	const exportReport = vscode.commands.registerCommand("hexEditor.nvm.exportReport", async () => {
+	const exportReport = vscode.commands.registerCommand("nvmStudio.nvm.exportReport", async () => {
 		const report = await buildActiveReport(registry, annotations);
 		if (!report) {
 			void vscode.window.showWarningMessage("Open an NVM dump first to export a report.");

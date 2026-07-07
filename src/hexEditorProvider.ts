@@ -28,11 +28,11 @@ import { copyAsFormats } from "./copyAs";
 import { DataInspectorView } from "./dataInspectorView";
 import { disposeAll } from "./dispose";
 import { HexDocument } from "./hexDocument";
-import { getDependencyResolver } from "./nvm/discovery/fileIndex";
 import { HexEditorRegistry } from "./hexEditorRegistry";
 import { AnnotationService } from "./nvm/annotations/annotationService";
-import { CustomViewService } from "./nvm/customViews/customViewService";
 import { addBlockToCustomView } from "./nvm/customViews/addToView";
+import { CustomViewService } from "./nvm/customViews/customViewService";
+import { configuredLayoutRoots, getDependencyResolver } from "./nvm/discovery/fileIndex";
 import { EngineManager } from "./nvm/engines/engineManager";
 import {
 	applyPalette,
@@ -393,15 +393,15 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 			return undefined; // web/virtual host cannot execute a local engine
 		}
 		const enabled = vscode.workspace
-			.getConfiguration("hexeditor")
+			.getConfiguration("nvmstudio")
 			.get<boolean>("nvm.allowExternalEngines", true);
 		if (!enabled) {
 			void this.warnEngineBlocked(
-				"NVM layout engines are disabled by the setting `hexeditor.nvm.allowExternalEngines`.",
+				"NVM layout engines are disabled by the setting `nvmstudio.nvm.allowExternalEngines`.",
 				"Enable",
 				async () => {
 					await vscode.workspace
-						.getConfiguration("hexeditor")
+						.getConfiguration("nvmstudio")
 						.update("nvm.allowExternalEngines", true, vscode.ConfigurationTarget.Workspace);
 				},
 			);
@@ -532,7 +532,7 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 
 	/**
 	 * Fallback file discovery via the configured workspace roots
-	 * (`hexeditor.nvm.workspaceRoots`): recursively index them, prompt to
+	 * (`nvmstudio.nvm.workspaceRoots`): recursively index them, prompt to
 	 * disambiguate duplicate base names, and persist the choice. Returns undefined
 	 * when no roots are configured or the file is not found — keeping the flat
 	 * three-dir scan as the fast, zero-config default.
@@ -548,11 +548,17 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 	/**
 	 * Discover vendor layout descriptors (`*.nvmlayout.json`) near the opened
 	 * binary so vendor-specific formats can be added purely by configuration.
-	 * Searches the file's directory, a sibling `conf/`, and the parent's `conf/`.
+	 * Searches the file's directory, a sibling `conf/`, and the parent's `conf/`,
+	 * plus any configured global `nvmstudio.nvm.layoutRoots` (each root and its
+	 * `conf/`), so descriptors can live in a shared folder instead of next to
+	 * every dump.
 	 */
 	private async findLayoutConfigs(dir: string): Promise<LayoutConfig[]> {
 		const parent = dir.replace(/[\\/][^\\/]+$/, "");
 		const searchDirs = [dir, `${dir}/conf`, `${parent}/conf`];
+		for (const root of configuredLayoutRoots()) {
+			searchDirs.push(root, `${root}/conf`);
+		}
 		const configs: LayoutConfig[] = [];
 		for (const d of searchDirs) {
 			try {
@@ -803,7 +809,7 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 	}
 
 	private readEditorSettings(): IEditorSettings {
-		const config = vscode.workspace.getConfiguration("hexeditor");
+		const config = vscode.workspace.getConfiguration("nvmstudio");
 		const settings: IEditorSettings = { ...defaultEditorSettings };
 		for (const key of editorSettingsKeys) {
 			if (config.has(key)) {
@@ -814,7 +820,7 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 	}
 
 	private writeEditorSettings(settings: IEditorSettings) {
-		const config = vscode.workspace.getConfiguration("hexeditor");
+		const config = vscode.workspace.getConfiguration("nvmstudio");
 		for (const key of editorSettingsKeys) {
 			const existing = config.inspect(key);
 			const target = !existing

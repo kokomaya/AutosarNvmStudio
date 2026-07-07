@@ -9,13 +9,13 @@
 
 import * as vscode from "vscode";
 import {
-	getDependencyResolver,
-	getDependencyStore,
-	invalidateDependencyResolver,
+    getDependencyResolver,
+    getDependencyStore,
+    invalidateDependencyResolver,
 } from "./fileIndex";
 
 export function registerReselectDependency(context: vscode.ExtensionContext): vscode.Disposable {
-	return vscode.commands.registerCommand("hexEditor.nvm.reselectDependency", async () => {
+	return vscode.commands.registerCommand("nvmStudio.nvm.reselectDependency", async () => {
 		const store = getDependencyStore(context);
 		const keys = store.keys();
 		if (keys.length === 0) {

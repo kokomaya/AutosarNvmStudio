@@ -16,6 +16,7 @@
  */
 
 import * as vscode from "vscode";
+import { nvmStudioEnginesUri } from "../paths";
 
 /** An engine pack manifest (`engine.json`). */
 export interface EngineManifest {
@@ -61,6 +62,28 @@ function safeId(id: string): string {
 	return id.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
+/**
+ * Infer an engine id from a download URL. Understands the registry layout
+ * `.../v1/engines/<id>/<version>/engine.js` (returns `<id>`), and otherwise
+ * falls back to the file base name without `.engine.js`/`.js`.
+ */
+function inferEngineIdFromUrl(url: string): string | undefined {
+	let pathname: string;
+	try {
+		pathname = new URL(url).pathname;
+	} catch {
+		pathname = url.replace(/[?#].*$/, "");
+	}
+	const segments = pathname.split("/").filter(Boolean);
+	const enginesIdx = segments.lastIndexOf("engines");
+	if (enginesIdx >= 0 && segments.length > enginesIdx + 1) {
+		return segments[enginesIdx + 1];
+	}
+	const base = segments[segments.length - 1] || "";
+	const candidate = base.replace(/\.engine\.js$/i, "").replace(/\.js$/i, "").trim();
+	return candidate || undefined;
+}
+
 export class EngineManager {
 	/** Root folder for user-installed / downloaded packs: `<globalStorage>/engines`. */
 	private readonly root: vscode.Uri;
@@ -70,7 +93,9 @@ export class EngineManager {
 	private readonly allowBundled: boolean;
 
 	constructor(private readonly context: vscode.ExtensionContext) {
-		this.root = vscode.Uri.joinPath(context.globalStorageUri, "engines");
+		// Engines install under the unified NVM Studio user home (shared with conf),
+		// not the extension's global storage.
+		this.root = nvmStudioEnginesUri();
 		this.bundledRoot = vscode.Uri.joinPath(context.extensionUri, "dist", "engines");
 		this.allowBundled = context.extensionMode === vscode.ExtensionMode.Development;
 	}
@@ -217,8 +242,7 @@ export class EngineManager {
 			throw new Error(`Download failed: ${res.status} ${res.statusText}`);
 		}
 		const text = await res.text();
-		const base = url.replace(/[?#].*$/, "").replace(/^.*\//, "");
-		const packId = safeId(id || base.replace(/\.engine\.js$/i, "").replace(/\.js$/i, "") || "engine");
+		const packId = safeId((id || inferEngineIdFromUrl(url) || "engine").trim());
 		await this.ensureRoot();
 		const dest = vscode.Uri.joinPath(this.root, packId);
 		await vscode.workspace.fs.createDirectory(dest);

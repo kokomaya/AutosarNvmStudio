@@ -12,7 +12,7 @@
  */
 
 import * as vscode from "vscode";
-import { CapabilityEntry, CapabilityGroup, CAPABILITY_CATALOG } from "./capabilityCatalog";
+import { CAPABILITY_CATALOG, CapabilityEntry, CapabilityGroup } from "./capabilityCatalog";
 
 interface CapabilityPickItem extends vscode.QuickPickItem {
 	entry?: CapabilityEntry;
@@ -20,7 +20,7 @@ interface CapabilityPickItem extends vscode.QuickPickItem {
 
 /** Register the show-capabilities command. */
 export function registerShowCapabilities(context: vscode.ExtensionContext): vscode.Disposable {
-	return vscode.commands.registerCommand("hexEditor.nvm.showCapabilities", async () => {
+	return vscode.commands.registerCommand("nvmStudio.nvm.showCapabilities", async () => {
 		const version =
 			(context.extension.packageJSON as { version?: string } | undefined)?.version ?? "?";
 

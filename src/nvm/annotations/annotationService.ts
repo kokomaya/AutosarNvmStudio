@@ -29,7 +29,7 @@ export class AnnotationService {
 
 	constructor(context: vscode.ExtensionContext) {
 		const mode = vscode.workspace
-			.getConfiguration("hexeditor")
+			.getConfiguration("nvmstudio")
 			.get<string>("nvm.annotationStorage", "sidecar");
 		this.store = mode === "workspaceState" ? new WorkspaceStateStore(context) : new SidecarStore();
 	}

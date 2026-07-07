@@ -19,7 +19,7 @@ export class DataInspectorView extends Disposable implements vscode.WebviewViewP
 		super();
 		this._register(
 			registry.onDidChangeActiveDocument(doc => {
-				const inspectorType = vscode.workspace.getConfiguration("hexeditor").get("inspectorType");
+				const inspectorType = vscode.workspace.getConfiguration("nvmstudio").get("inspectorType");
 				const shouldShow = inspectorType === InspectorLocation.Sidebar && !!doc;
 
 				vscode.commands.executeCommand("setContext", "hexEditor:showSidebarInspector", shouldShow);
@@ -81,7 +81,7 @@ export class DataInspectorView extends Disposable implements vscode.WebviewViewP
 		// Don't reveal the panel if configured not to
 		if (
 			options?.autoReveal &&
-			!vscode.workspace.getConfiguration("hexeditor.dataInspector").get("autoReveal", false)
+			!vscode.workspace.getConfiguration("nvmstudio.dataInspector").get("autoReveal", false)
 		) {
 			return;
 		}
@@ -107,7 +107,7 @@ export class DataInspectorView extends Disposable implements vscode.WebviewViewP
 		);
 		const endianness = vscode.workspace
 			.getConfiguration()
-			.get("hexeditor.defaultEndianness") as string;
+			.get("nvmstudio.defaultEndianness") as string;
 		const nonce = randomString();
 		return `<!DOCTYPE html>
             <html lang="en">

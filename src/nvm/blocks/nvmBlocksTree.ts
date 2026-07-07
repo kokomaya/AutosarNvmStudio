@@ -107,7 +107,7 @@ export class NvmBlocksTree implements vscode.TreeDataProvider<BlockNode> {
 		item.contextValue = "nvmBlock";
 		item.iconPath = new vscode.ThemeIcon(block.isLatest ? "circle-filled" : "circle-outline");
 		item.command = {
-			command: "hexEditor.nvm.jumpTo",
+			command: "nvmStudio.nvm.jumpTo",
 			title: vscode.l10n.t("Jump"),
 			arguments: [block.offset],
 		};

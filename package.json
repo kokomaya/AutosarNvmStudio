@@ -28,7 +28,7 @@
       {
         "title": "%name%",
         "properties": {
-          "hexeditor.inspectorType": {
+          "nvmstudio.inspectorType": {
             "type": "string",
             "enum": [
               "aside",
@@ -38,18 +38,18 @@
             "default": "aside",
             "description": "%hexeditor.inspectorType%"
           },
-          "hexeditor.maxFileSize": {
+          "nvmstudio.maxFileSize": {
             "type": "number",
             "minimum": 0,
             "default": 10,
             "description": "%hexeditor.maxFileSize%"
           },
-          "hexeditor.dataInspector.autoReveal": {
+          "nvmstudio.dataInspector.autoReveal": {
             "type": "boolean",
             "default": true,
             "description": "%hexeditor.dataInspector.autoReveal%"
           },
-          "hexeditor.defaultEndianness": {
+          "nvmstudio.defaultEndianness": {
             "type": "string",
             "default": "little",
             "enum": [
@@ -58,14 +58,14 @@
             ],
             "description": "%hexeditor.defaultEndianness%"
           },
-          "hexeditor.columnWidth": {
+          "nvmstudio.columnWidth": {
             "type": "integer",
             "default": 16,
             "minimum": 1,
             "maximum": 512,
             "description": "%hexeditor.columnWidth%"
           },
-          "hexeditor.copyType": {
+          "nvmstudio.copyType": {
             "type": "string",
             "enum": [
               "Hex Octets",
@@ -81,27 +81,27 @@
             "default": "Hex Octets",
             "description": "%hexeditor.copyType%"
           },
-          "hexeditor.showDecodedText": {
+          "nvmstudio.showDecodedText": {
             "type": "boolean",
             "default": true,
             "description": "%hexeditor.showDecodedText%"
           },
-          "hexeditor.showOpenFileButton": {
+          "nvmstudio.showOpenFileButton": {
             "type": "boolean",
             "default": false,
             "description": "%hexeditor.showOpenFileButton%"
           },
-          "hexeditor.autoLoadArxml": {
+          "nvmstudio.autoLoadArxml": {
             "type": "boolean",
             "default": true,
             "description": "Automatically load an ARXML file from the same directory as the opened binary (if present)."
           },
-          "hexeditor.nvm.allowExternalEngines": {
+          "nvmstudio.nvm.allowExternalEngines": {
             "type": "boolean",
             "default": true,
             "description": "Master switch for NVM layout engines. When a layout descriptor (`*.nvmlayout.json`) declares an `engineScript`/`engine`, it is executed to parse the dump — but only in the desktop extension host, in a trusted workspace, and after a one-time per-file confirmation. Set to `false` to disable engines entirely for locked-down environments."
           },
-          "hexeditor.nvm.annotationStorage": {
+          "nvmstudio.nvm.annotationStorage": {
             "type": "string",
             "enum": [
               "sidecar",
@@ -114,16 +114,25 @@
             "default": "sidecar",
             "description": "Where NVM bookmarks, tags and notes are persisted."
           },
-          "hexeditor.nvm.workspaceRoots": {
+          "nvmstudio.nvm.workspaceRoots": {
             "type": "array",
             "items": {
               "type": "string"
             },
             "default": [],
             "scope": "resource",
-            "markdownDescription": "Root folders searched **recursively** to auto-find dependency files a layout descriptor declares (e.g. `Fee_Lcfg.c`, `Dem_Lcfg.h`, `*.arxml`) when they aren't next to the dump or in `./conf`/`../conf`. Supports `${workspaceFolder}` and `${workspaceFolder:Name}`. When several files share a name you'll be asked which to use, and the choice is remembered (see `#hexeditor.nvm.fileChoices#`). The plugin never downloads files — fetch remote ones into a root yourself."
+            "markdownDescription": "Root folders searched **recursively** to auto-find dependency files a layout descriptor declares (e.g. `Fee_Lcfg.c`, `Dem_Lcfg.h`, `*.arxml`) when they aren't next to the dump or in `./conf`/`../conf`. This is **not** the dump folder and **not** the auto-discovery `./conf`/`../conf` (those are always searched). Supports `${workspaceFolder}` and `${workspaceFolder:Name}`. When several files share a name you'll be asked which to use, and the choice is remembered (see `#nvmstudio.nvm.fileChoices#`). The plugin never downloads files — fetch remote ones into a root yourself."
           },
-          "hexeditor.nvm.fileChoices": {
+          "nvmstudio.nvm.layoutRoots": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [],
+            "scope": "resource",
+            "markdownDescription": "Global folders scanned for layout **descriptors** (`*.nvmlayout.json`) so they don't have to sit next to each dump. Each listed folder **and its `conf/` subfolder** are scanned directly (works for absolute paths outside the workspace, e.g. a shared user folder). This is separate from `#nvmstudio.nvm.workspaceRoots#`, which finds the descriptor's declared **source** files. Supports `${workspaceFolder}` and `${workspaceFolder:Name}`."
+          },
+          "nvmstudio.nvm.fileChoices": {
             "type": "object",
             "default": {},
             "scope": "resource",
@@ -151,188 +160,193 @@
     ],
     "commands": [
       {
-        "command": "hexEditor.openFile",
+        "command": "nvmStudio.openFile",
         "category": "%name%",
         "title": "%hexEditor.openFile%",
         "icon": "$(file-binary)"
       },
       {
-        "command": "hexEditor.goToOffset",
+        "command": "nvmStudio.goToOffset",
         "category": "%name%",
         "title": "%hexEditor.goToOffset%"
       },
       {
-        "command": "hexEditor.selectBetweenOffsets",
+        "command": "nvmStudio.selectBetweenOffsets",
         "category": "%name%",
         "title": "%hexEditor.selectBetweenOffsets%"
       },
       {
-        "command": "hexEditor.copyAs",
+        "command": "nvmStudio.copyAs",
         "category": "%name%",
         "title": "%hexEditor.copyAs%"
       },
       {
-        "command": "hexEditor.switchEditMode",
+        "command": "nvmStudio.switchEditMode",
         "category": "%name%",
         "title": "%hexEditor.switchEditMode%"
       },
       {
-        "command": "hexEditor.copyOffsetAsHex",
+        "command": "nvmStudio.copyOffsetAsHex",
         "category": "%name%",
         "title": "%hexEditor.copyOffsetAsHex%"
       },
       {
-        "command": "hexEditor.copyOffsetAsDec",
+        "command": "nvmStudio.copyOffsetAsDec",
         "category": "%name%",
         "title": "%hexEditor.copyOffsetAsDec%"
       },
       {
-        "command": "hexEditor.loadNvmArxml",
+        "command": "nvmStudio.loadNvmArxml",
         "category": "%name%",
         "title": "Load NVM ARXML"
       },
       {
-        "command": "hexEditor.nvm.installEngine",
+        "command": "nvmStudio.nvm.installEngine",
         "category": "NVM",
         "title": "Install Engine…"
       },
       {
-        "command": "hexEditor.nvm.installEngineFromUrl",
+        "command": "nvmStudio.nvm.installEngineFromUrl",
         "category": "NVM",
         "title": "Install Engine from URL…"
       },
       {
-        "command": "hexEditor.nvm.manageEngines",
+        "command": "nvmStudio.nvm.installConfigsFromUrl",
+        "category": "NVM",
+        "title": "Install Layout Configs from URL…"
+      },
+      {
+        "command": "nvmStudio.nvm.manageEngines",
         "category": "NVM",
         "title": "Manage Engines…"
       },
       {
-        "command": "hexEditor.nvm.jumpTo",
+        "command": "nvmStudio.nvm.jumpTo",
         "category": "NVM",
         "title": "Jump to Annotation"
       },
       {
-        "command": "hexEditor.nvm.blocks.arrange.flat",
+        "command": "nvmStudio.nvm.blocks.arrange.flat",
         "category": "NVM",
         "title": "Flat (by address)"
       },
       {
-        "command": "hexEditor.nvm.blocks.arrange.sector",
+        "command": "nvmStudio.nvm.blocks.arrange.sector",
         "category": "NVM",
         "title": "Group by sector"
       },
       {
-        "command": "hexEditor.nvm.blocks.arrange.write",
+        "command": "nvmStudio.nvm.blocks.arrange.write",
         "category": "NVM",
         "title": "Order by write time"
       },
       {
-        "command": "hexEditor.nvm.blocks.arrange.identity",
+        "command": "nvmStudio.nvm.blocks.arrange.identity",
         "category": "NVM",
         "title": "Group by block id"
       },
       {
-        "command": "hexEditor.nvm.blocks.filter",
+        "command": "nvmStudio.nvm.blocks.filter",
         "category": "NVM",
         "title": "Filter Blocks…",
         "icon": "$(search)"
       },
       {
-        "command": "hexEditor.nvm.blocks.clearFilter",
+        "command": "nvmStudio.nvm.blocks.clearFilter",
         "category": "NVM",
         "title": "Clear Block Filter",
         "icon": "$(clear-all)"
       },
       {
-        "command": "hexEditor.nvm.blocks.configureColumns",
+        "command": "nvmStudio.nvm.blocks.configureColumns",
         "category": "NVM",
         "title": "Choose Block Columns…",
         "icon": "$(settings-gear)"
       },
       {
-        "command": "hexEditor.nvm.blocks.refresh",
+        "command": "nvmStudio.nvm.blocks.refresh",
         "category": "NVM",
         "title": "Refresh Blocks",
         "icon": "$(refresh)"
       },
       {
-        "command": "hexEditor.nvm.customViews.addBlock",
+        "command": "nvmStudio.nvm.customViews.addBlock",
         "category": "NVM",
         "title": "Add Block to Custom View",
         "icon": "$(add)"
       },
       {
-        "command": "hexEditor.nvm.openNoteNode",
+        "command": "nvmStudio.nvm.openNoteNode",
         "category": "NVM",
         "title": "Open Note",
         "icon": "$(go-to-file)"
       },
       {
-        "command": "hexEditor.nvm.deleteAnnotation",
+        "command": "nvmStudio.nvm.deleteAnnotation",
         "category": "NVM",
         "title": "Delete",
         "icon": "$(trash)"
       },
       {
-        "command": "hexEditor.nvm.renameBookmark",
+        "command": "nvmStudio.nvm.renameBookmark",
         "category": "NVM",
         "title": "Rename Bookmark",
         "icon": "$(edit)"
       },
       {
-        "command": "hexEditor.nvm.exportReport",
+        "command": "nvmStudio.nvm.exportReport",
         "category": "NVM",
         "title": "Export Report…"
       },
       {
-        "command": "hexEditor.nvm.openReportPreview",
+        "command": "nvmStudio.nvm.openReportPreview",
         "category": "NVM",
         "title": "Open Report Preview",
         "icon": "$(preview)"
       },
       {
-        "command": "hexEditor.nvm.openChat",
+        "command": "nvmStudio.nvm.openChat",
         "category": "NVM",
         "title": "Ask NVM AI",
         "icon": "$(comment-discussion)"
       },
       {
-        "command": "hexEditor.nvm.showCapabilities",
+        "command": "nvmStudio.nvm.showCapabilities",
         "category": "NVM",
         "title": "Show Capabilities",
         "icon": "$(list-unordered)"
       },
       {
-        "command": "hexEditor.nvm.reselectDependency",
+        "command": "nvmStudio.nvm.reselectDependency",
         "category": "NVM",
         "title": "Reselect Dependency File",
         "icon": "$(references)"
       },
       {
-        "command": "hexEditor.nvm.addBookmarkHere",
+        "command": "nvmStudio.nvm.addBookmarkHere",
         "category": "NVM",
         "title": "Add Bookmark Here",
         "icon": "$(bookmark)"
       },
       {
-        "command": "hexEditor.nvm.addNoteHere",
+        "command": "nvmStudio.nvm.addNoteHere",
         "category": "NVM",
         "title": "Add Note Here",
         "icon": "$(note)"
       },
       {
-        "command": "hexEditor.nvm.tagSelectionHere",
+        "command": "nvmStudio.nvm.tagSelectionHere",
         "category": "NVM",
         "title": "Tag Selection…",
         "icon": "$(tag)"
       },
       {
-        "command": "hexEditor.nvm.removeTagHere",
+        "command": "nvmStudio.nvm.removeTagHere",
         "category": "NVM",
         "title": "Remove Tag Here"
       },
       {
-        "command": "hexEditor.compareSelected",
+        "command": "nvmStudio.compareSelected",
         "category": "%name%",
         "title": "%hexEditor.compareSelected%"
       }
@@ -622,65 +636,65 @@
     "menus": {
       "hexEditor.nvm.blocks.arrangeMenu": [
         {
-          "command": "hexEditor.nvm.blocks.arrange.flat",
+          "command": "nvmStudio.nvm.blocks.arrange.flat",
           "group": "arrange@1"
         },
         {
-          "command": "hexEditor.nvm.blocks.arrange.sector",
+          "command": "nvmStudio.nvm.blocks.arrange.sector",
           "group": "arrange@2"
         },
         {
-          "command": "hexEditor.nvm.blocks.arrange.write",
+          "command": "nvmStudio.nvm.blocks.arrange.write",
           "group": "arrange@3"
         },
         {
-          "command": "hexEditor.nvm.blocks.arrange.identity",
+          "command": "nvmStudio.nvm.blocks.arrange.identity",
           "group": "arrange@4"
         }
       ],
       "commandPalette": [
         {
-          "command": "hexEditor.goToOffset",
+          "command": "nvmStudio.goToOffset",
           "when": "hexEditor:isActive"
         },
         {
-          "command": "hexEditor.switchEditMode",
+          "command": "nvmStudio.switchEditMode",
           "when": "hexEditor:isActive"
         },
         {
-          "command": "hexEditor.compareSelected",
+          "command": "nvmStudio.compareSelected",
           "when": "false"
         },
         {
-          "command": "hexEditor.nvm.jumpTo",
+          "command": "nvmStudio.nvm.jumpTo",
           "when": "false"
         },
         {
-          "command": "hexEditor.nvm.openNoteNode",
+          "command": "nvmStudio.nvm.openNoteNode",
           "when": "false"
         },
         {
-          "command": "hexEditor.nvm.deleteAnnotation",
+          "command": "nvmStudio.nvm.deleteAnnotation",
           "when": "false"
         },
         {
-          "command": "hexEditor.nvm.renameBookmark",
+          "command": "nvmStudio.nvm.renameBookmark",
           "when": "false"
         },
         {
-          "command": "hexEditor.nvm.addBookmarkHere",
+          "command": "nvmStudio.nvm.addBookmarkHere",
           "when": "hexEditor:isActive"
         },
         {
-          "command": "hexEditor.nvm.addNoteHere",
+          "command": "nvmStudio.nvm.addNoteHere",
           "when": "hexEditor:isActive"
         },
         {
-          "command": "hexEditor.nvm.tagSelectionHere",
+          "command": "nvmStudio.nvm.tagSelectionHere",
           "when": "hexEditor:isActive"
         },
         {
-          "command": "hexEditor.nvm.removeTagHere",
+          "command": "nvmStudio.nvm.removeTagHere",
           "when": "hexEditor:isActive"
         }
       ],
@@ -691,129 +705,129 @@
           "group": "navigation@1"
         },
         {
-          "command": "hexEditor.nvm.blocks.filter",
+          "command": "nvmStudio.nvm.blocks.filter",
           "when": "view == hexEditor.nvmBlocks",
           "group": "navigation@2"
         },
         {
-          "command": "hexEditor.nvm.blocks.configureColumns",
+          "command": "nvmStudio.nvm.blocks.configureColumns",
           "when": "view == hexEditor.nvmBlocks",
           "group": "navigation@3"
         },
         {
-          "command": "hexEditor.nvm.blocks.refresh",
+          "command": "nvmStudio.nvm.blocks.refresh",
           "when": "view == hexEditor.nvmBlocks",
           "group": "navigation@4"
         },
         {
-          "command": "hexEditor.nvm.blocks.clearFilter",
+          "command": "nvmStudio.nvm.blocks.clearFilter",
           "when": "view == hexEditor.nvmBlocks",
           "group": "1_filter@1"
         },
         {
-          "command": "hexEditor.nvm.openReportPreview",
+          "command": "nvmStudio.nvm.openReportPreview",
           "when": "view == hexEditor.nvmStudio",
           "group": "navigation@1"
         },
         {
-          "command": "hexEditor.nvm.openChat",
+          "command": "nvmStudio.nvm.openChat",
           "when": "view == hexEditor.nvmStudio",
           "group": "navigation@2"
         }
       ],
       "view/item/context": [
         {
-          "command": "hexEditor.nvm.customViews.addBlock",
+          "command": "nvmStudio.nvm.customViews.addBlock",
           "when": "view == hexEditor.nvmBlocks && viewItem == nvmBlock",
           "group": "inline@1"
         },
         {
-          "command": "hexEditor.nvm.customViews.addBlock",
+          "command": "nvmStudio.nvm.customViews.addBlock",
           "when": "view == hexEditor.nvmBlocks && viewItem == nvmBlock",
           "group": "1_view@1"
         },
         {
-          "command": "hexEditor.nvm.openNoteNode",
+          "command": "nvmStudio.nvm.openNoteNode",
           "when": "view == hexEditor.nvmStudio && viewItem == note",
           "group": "inline@1"
         },
         {
-          "command": "hexEditor.nvm.renameBookmark",
+          "command": "nvmStudio.nvm.renameBookmark",
           "when": "view == hexEditor.nvmStudio && viewItem == bookmark",
           "group": "inline@1"
         },
         {
-          "command": "hexEditor.nvm.deleteAnnotation",
+          "command": "nvmStudio.nvm.deleteAnnotation",
           "when": "view == hexEditor.nvmStudio && viewItem =~ /bookmark|note|tagAssignment/",
           "group": "inline@2"
         },
         {
-          "command": "hexEditor.nvm.openNoteNode",
+          "command": "nvmStudio.nvm.openNoteNode",
           "when": "view == hexEditor.nvmStudio && viewItem == note"
         }
       ],
       "editor/title": [
         {
-          "command": "hexEditor.openFile",
+          "command": "nvmStudio.openFile",
           "group": "navigation@1",
-          "when": "activeEditor && config.hexeditor.showOpenFileButton"
+          "when": "activeEditor && config.nvmstudio.showOpenFileButton"
         },
         {
-          "command": "hexEditor.nvm.openReportPreview",
+          "command": "nvmStudio.nvm.openReportPreview",
           "group": "navigation@2",
           "when": "activeCustomEditorId == hexEditor.hexedit"
         },
         {
-          "command": "hexEditor.nvm.openChat",
+          "command": "nvmStudio.nvm.openChat",
           "group": "navigation@3",
           "when": "activeCustomEditorId == hexEditor.hexedit"
         }
       ],
       "webview/context": [
         {
-          "command": "hexEditor.nvm.addBookmarkHere",
+          "command": "nvmStudio.nvm.addBookmarkHere",
           "group": "nvm@1",
           "when": "hexEditor:isActive"
         },
         {
-          "command": "hexEditor.nvm.addNoteHere",
+          "command": "nvmStudio.nvm.addNoteHere",
           "group": "nvm@2",
           "when": "hexEditor:isActive"
         },
         {
-          "command": "hexEditor.nvm.tagSelectionHere",
+          "command": "nvmStudio.nvm.tagSelectionHere",
           "group": "nvm@3",
           "when": "hexEditor:isActive"
         },
         {
-          "command": "hexEditor.nvm.removeTagHere",
+          "command": "nvmStudio.nvm.removeTagHere",
           "group": "nvm@4",
           "when": "hexEditor:isActive"
         },
         {
-          "command": "hexEditor.nvm.openReportPreview",
+          "command": "nvmStudio.nvm.openReportPreview",
           "group": "nvm@5",
           "when": "hexEditor:isActive"
         },
         {
-          "command": "hexEditor.copyOffsetAsDec",
+          "command": "nvmStudio.copyOffsetAsDec",
           "group": "9_cutcopypaste",
           "when": "hexEditor:isActive"
         },
         {
-          "command": "hexEditor.copyOffsetAsHex",
+          "command": "nvmStudio.copyOffsetAsHex",
           "group": "9_cutcopypaste",
           "when": "hexEditor:isActive"
         },
         {
           "when": "webviewId == 'hexEditor.hexedit'",
-          "command": "hexEditor.copyAs",
+          "command": "nvmStudio.copyAs",
           "group": "9_cutcopypaste"
         }
       ],
       "explorer/context": [
         {
-          "command": "hexEditor.compareSelected",
+          "command": "nvmStudio.compareSelected",
           "group": "3_compare@30",
           "when": "listDoubleSelection"
         }
@@ -821,32 +835,32 @@
     },
     "keybindings": [
       {
-        "command": "hexEditor.goToOffset",
+        "command": "nvmStudio.goToOffset",
         "key": "ctrl+g",
         "when": "activeCustomEditorId == hexEditor.hexedit"
       },
       {
-        "command": "hexEditor.copyAs",
+        "command": "nvmStudio.copyAs",
         "key": "alt+ctrl+c",
         "when": "activeCustomEditorId == hexEditor.hexedit"
       },
       {
-        "command": "hexEditor.switchEditMode",
+        "command": "nvmStudio.switchEditMode",
         "key": "Insert",
         "when": "hexEditor:isActive"
       },
       {
-        "command": "hexEditor.nvm.addBookmarkHere",
+        "command": "nvmStudio.nvm.addBookmarkHere",
         "key": "ctrl+alt+b",
         "when": "activeCustomEditorId == hexEditor.hexedit"
       },
       {
-        "command": "hexEditor.nvm.addNoteHere",
+        "command": "nvmStudio.nvm.addNoteHere",
         "key": "ctrl+alt+n",
         "when": "activeCustomEditorId == hexEditor.hexedit"
       },
       {
-        "command": "hexEditor.nvm.tagSelectionHere",
+        "command": "nvmStudio.nvm.tagSelectionHere",
         "key": "ctrl+alt+t",
         "when": "activeCustomEditorId == hexEditor.hexedit"
       }
@@ -862,7 +876,7 @@
     "test": "tsc --noEmit && node ./src/test/runTest.js",
     "nvmcli:build": "esbuild tools/nvmcli.ts --bundle --platform=node --outfile=dist/nvmcli.js",
     "vscode:prepublish": "npm run compile",
-    "package:vsix": "npm run compile && vsce package --no-dependencies -o dist/nvm-studio-hexeditor.vsix"
+    "package:vsix": "vsce package --no-dependencies -o dist/nvm-studio.vsix"
   },
   "devDependencies": {
     "@types/chai": "^5",

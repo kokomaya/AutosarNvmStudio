@@ -24,7 +24,7 @@ export default class StatusEditMode extends Disposable {
 			vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 99),
 		);
 		this.item.tooltip = vscode.l10n.t("Switch Edit Mode");
-		this.item.command = "hexEditor.switchEditMode";
+		this.item.command = "nvmStudio.switchEditMode";
 
 		const trackDocument = (doc: HexDocument | undefined) => {
 			if (doc) {
