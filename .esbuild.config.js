@@ -141,6 +141,20 @@ fs.copyFileSync(
 	"dist/engines/vector-fee-v3/engine.json",
 );
 
+// Ship the standard layout descriptor(s) alongside the engine so the pack is
+// self-describing (dist/engines/vector-fee-v3/conf/*.nvmlayout.json). Point the
+// engine server's conf root here, or copy them next to a dump.
+const engineConfSrc = "engines/vector-fee-v3/conf";
+if (fs.existsSync(engineConfSrc)) {
+	const engineConfDst = "dist/engines/vector-fee-v3/conf";
+	fs.mkdirSync(engineConfDst, { recursive: true });
+	for (const name of fs.readdirSync(engineConfSrc)) {
+		if (name.toLowerCase().endsWith(".nvmlayout.json")) {
+			fs.copyFileSync(`${engineConfSrc}/${name}`, `${engineConfDst}/${name}`);
+		}
+	}
+}
+
 // Ship the Blocks Table stylesheet (static file, referenced by the webview).
 fs.copyFileSync("media/nvm-blocks/blocksTable.css", "dist/nvmBlocksTable.css");
 

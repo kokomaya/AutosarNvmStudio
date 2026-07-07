@@ -216,6 +216,11 @@
         "title": "Install Layout Configs from URL…"
       },
       {
+        "command": "nvmStudio.nvm.installVendorPackFromUrl",
+        "category": "NVM",
+        "title": "Install Vendor Pack (Engine + Configs) from URL…"
+      },
+      {
         "command": "nvmStudio.nvm.manageEngines",
         "category": "NVM",
         "title": "Manage Engines…"
@@ -321,6 +326,12 @@
         "category": "NVM",
         "title": "Reselect Dependency File",
         "icon": "$(references)"
+      },
+      {
+        "command": "nvmStudio.nvm.reloadLayout",
+        "category": "NVM",
+        "title": "Reload Layout (Reparse Dump)",
+        "icon": "$(refresh)"
       },
       {
         "command": "nvmStudio.nvm.addBookmarkHere",
@@ -432,9 +443,25 @@
         }
       },
       {
+        "name": "nvm_describeDump",
+        "displayName": "NVM: describe dump",
+        "modelDescription": "Return an EXACT whole-dump aggregate for the active hex-editor dump, computed on the host over ALL blocks (never truncated). Includes total block count, decoded-block count, distinct decoded-structure count, block counts grouped by numeric name family (e.g. DemPrimaryDataBlock*), counts grouped by decoded-structure fingerprint, and value distributions of vendor-neutral attributes. Use this FIRST to answer 'how many X blocks' questions instead of counting a paged list.",
+        "toolReferenceName": "nvmDescribeDump",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(graph)",
+        "tags": [
+          "nvm",
+          "hexeditor"
+        ],
+        "inputSchema": {
+          "type": "object",
+          "properties": {}
+        }
+      },
+      {
         "name": "nvm_searchBlocks",
         "displayName": "NVM: search blocks",
-        "modelDescription": "Search the active dump's blocks by a case-insensitive substring of the block name/id, or by a byte offset (0x.. or decimal) that falls inside a block. Paged. Prefer this over listing all blocks on large dumps.",
+        "modelDescription": "Search the active dump's blocks by a case-insensitive substring of the block name/id, an attribute label/value, a decoded field name, or by a byte offset (0x.. or decimal) that falls inside a block. Paged. Prefer this over listing all blocks on large dumps.",
         "toolReferenceName": "nvmSearchBlocks",
         "canBeReferencedInPrompt": true,
         "icon": "$(search)",
@@ -696,6 +723,10 @@
         {
           "command": "nvmStudio.nvm.removeTagHere",
           "when": "hexEditor:isActive"
+        },
+        {
+          "command": "nvmStudio.nvm.reloadLayout",
+          "when": "hexEditor:isActive"
         }
       ],
       "view/title": [
@@ -733,6 +764,11 @@
           "command": "nvmStudio.nvm.openChat",
           "when": "view == hexEditor.nvmStudio",
           "group": "navigation@2"
+        },
+        {
+          "command": "nvmStudio.nvm.reloadLayout",
+          "when": "view == hexEditor.nvmStudio",
+          "group": "navigation@3"
         }
       ],
       "view/item/context": [

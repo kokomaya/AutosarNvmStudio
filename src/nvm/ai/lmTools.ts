@@ -18,6 +18,7 @@ import {
 	AnnotationsSummary,
 	BlockSummary,
 	DecodedSummaryNode,
+	DumpOverview,
 	NvmCapabilities,
 	NvmCapabilityError,
 	Page,
@@ -119,6 +120,36 @@ function formatDecoded(nodes: DecodedSummaryNode[], depth: number): string {
 	return out.join("\n");
 }
 
+function formatDumpOverview(o: DumpOverview): string {
+	const lines: string[] = [];
+	lines.push(
+		`Total blocks: ${o.totalBlocks} (decoded: ${o.decodedBlocks}, distinct structures: ${o.distinctStructures})`,
+	);
+	if (o.nameFamilies.length) {
+		lines.push("", "Block name families (name* : count):");
+		for (const f of o.nameFamilies) {
+			lines.push(`  - ${f.key} : ${f.count}`);
+		}
+		if (o.truncated.nameFamilies) {
+			lines.push("  … more families omitted");
+		}
+	}
+	if (o.structureGroups.length) {
+		lines.push("", "Decoded-structure groups (representative name : count):");
+		for (const g of o.structureGroups) {
+			lines.push(`  - ${g.label} : ${g.count}`);
+		}
+		if (o.truncated.structureGroups) {
+			lines.push("  … more groups omitted");
+		}
+	}
+	for (const a of o.attributes) {
+		const vals = a.values.map(v => `${v.key}(${v.count})`).join(", ");
+		lines.push("", `${a.label} distribution: ${vals}`);
+	}
+	return lines.join("\n");
+}
+
 function formatAnnotations(a: AnnotationsSummary): string {
 	const bm = a.bookmarks.map(b => `  - ${b.label ?? "bookmark"} @ ${hex(b.offset)}`).join("\n");
 	const tags = a.tags.map(t => `  - ${t.label} (${t.assignments})`).join("\n");
@@ -145,6 +176,12 @@ export function registerLmTools(caps: NvmCapabilities): vscode.Disposable[] {
 						caps.listBlocks({ limit: options.input?.limit, offset: options.input?.offset }),
 					),
 				),
+		}),
+	);
+
+	d.push(
+		lm.registerTool("nvm_describeDump", {
+			invoke: async () => guarded(() => formatDumpOverview(caps.describeDump())),
 		}),
 	);
 

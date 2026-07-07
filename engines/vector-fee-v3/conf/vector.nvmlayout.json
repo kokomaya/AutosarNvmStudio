@@ -1,0 +1,67 @@
+{
+  "_comment": "STANDARD Vector MICROSAR FEE V3 layout descriptor. This is the reusable default shipped next to the engine (dist/engines/vector-fee-v3/conf/). Drop a copy next to an NVM dump — or in ./conf, ../conf, or a folder listed in nvmstudio.nvm.layoutRoots — and the plugin names every FEE chunk from Fee_Lcfg.c and splits business data / MAC / padding using NvM_Cfg.c. 'engine' references the installed pack (id 'vector-fee-v3'); to hot-reload while debugging, replace 'engine' with 'engineScript': './vectorFeeV3.engine.js'. Per-project struct decoding is added by extending 'options' with 'structCatalog' + 'structs.fromSources' + 'blockStructs' (see docs/nvm-layout-providers.md §3d).",
+  "vendor": "Vector MICROSAR FEE V3 (link table)",
+  "engine": "vector-fee-v3",
+  "sources": {
+    "_comment": "feeLcfg names the chunks (tag → name → stored length). nvmCfg (NvM_Cfg.c) splits the stored payload into business data (NvMNvBlockLength) + MAC/CRC (NvMacSize) + padding; omit it and the whole stored payload is one region.",
+    "feeLcfg": "Fee_Lcfg.c",
+    "nvmCfg": "NvM_Cfg.c"
+  },
+  "match": { "ext": [".mot", ".srec", ".s19", ".s28", ".s37", ".hex", ".bin"] },
+  "palette": {
+    "_comment": "kind -> any CSS color. Style lives here, not in code. A kind with no entry (and no per-field 'color') gets a deterministic auto color.",
+    "counter": "hsl(0 75% 80%)",
+    "ltSize": "hsl(25 85% 78%)",
+    "status": "hsl(340 55% 85%)",
+    "linkTarget": "hsl(180 55% 76%)",
+    "payloadSize": "hsl(200 60% 80%)",
+    "pad": "hsl(0 0% 84%)",
+    "linkEmpty": "hsl(0 0% 92%)",
+    "tag": "hsl(210 70% 80%)",
+    "datasetIdx": "hsl(260 55% 85%)",
+    "mgmtType": "hsl(280 55% 82%)",
+    "payloadLen": "hsl(200 60% 80%)",
+    "align": "hsl(0 0% 88%)",
+    "marker": "hsl(45 80% 80%)",
+    "payload": "hsl(140 55% 82%)",
+    "mac": "hsl(15 70% 80%)",
+    "padding": "hsl(0 0% 84%)",
+    "chunkTrailer": "hsl(50 40% 80%)",
+    "nextLink": "hsl(180 55% 76%)"
+  },
+  "options": {
+    "_comment": "alignment / numberOfSectors / sectorSize are container geometry; tune per project. sectorSize 196608 = 0x30000.",
+    "alignment": 8,
+    "numberOfSectors": 2,
+    "sectorSize": 196608,
+    "structure": {
+      "_comment": "Field layout of each region the parser locates (offsets/lengths RELATIVE to the region start). Omit any part to use the built-in default. With nvmCfg declared, 'payload' = NvM data, 'payloadExtra' = MAC/CRC, 'payloadPadding' = trailing padding.",
+      "sectorHeader": [
+        { "name": "Counter / id",               "kind": "counter", "offset": 0, "length": 1 },
+        { "name": "ltSize",                      "kind": "ltSize",  "offset": 1, "length": 2 },
+        { "name": "Header status / complement",  "kind": "status",  "offset": 3, "length": 5 }
+      ],
+      "slot": [
+        { "name": "linkTarget",  "kind": "linkTarget",  "offset": 0, "length": 4, "link": { "encoding": "u32le", "label": "block" } },
+        { "name": "payloadSize", "kind": "payloadSize", "offset": 4, "length": 2 },
+        { "name": "pad",         "kind": "pad",         "offset": 6, "length": 2 }
+      ],
+      "slotEmpty": [
+        { "name": "unused slot", "kind": "linkEmpty", "offset": 0, "length": 8 }
+      ],
+      "chunkHeader": [
+        { "name": "block tag",      "kind": "tag",        "offset": 0, "length": 2 },
+        { "name": "dataset idx",    "kind": "datasetIdx", "offset": 2, "length": 1 },
+        { "name": "mgmt type",      "kind": "mgmtType",   "offset": 3, "length": 1 },
+        { "name": "payload length", "kind": "payloadLen", "offset": 4, "length": 2 },
+        { "name": "align",          "kind": "align",      "offset": 6, "length": 2 }
+      ],
+      "marker":        { "name": "Padding / start marker", "kind": "marker" },
+      "payload":       { "name": "Payload (NvM data)",     "kind": "payload" },
+      "payloadExtra":  { "name": "MAC / CRC",              "kind": "mac" },
+      "payloadPadding":{ "name": "padding",                "kind": "padding" },
+      "chunkTrailer":  { "name": "chunk trailer",          "kind": "chunkTrailer" },
+      "nextLink":      { "name": "next chunk link",        "kind": "nextLink" }
+    }
+  }
+}

@@ -25,10 +25,11 @@
  */
 
 import * as vscode from "vscode";
-import { NvmBlockInfo } from "../../../shared/protocol";
+import { fingerprintBlock, nameFamilyGlob } from "../../../shared/nvm/customView";
 import { NvmDecodedNode } from "../../../shared/nvm/structRich";
-import { HexEditorRegistry } from "../../hexEditorRegistry";
+import { NvmBlockInfo } from "../../../shared/protocol";
 import { HexDocument } from "../../hexDocument";
+import { HexEditorRegistry } from "../../hexEditorRegistry";
 import { AnnotationService } from "../annotations/annotationService";
 import { buildActiveReport } from "../report/reportCommands";
 
@@ -127,6 +128,34 @@ export interface AnnotationsSummary {
 	truncated: boolean;
 }
 
+/** A `key → count` bucket in an aggregate histogram. */
+export interface CountEntry {
+	key: string;
+	count: number;
+}
+
+/**
+ * A whole-dump aggregate computed on the host (never truncated), so the model
+ * can answer "how many X" exactly instead of guessing from a paged list. All
+ * buckets are derived generically from block metadata — name families, decoded
+ * structure fingerprints, and vendor-neutral attributes — with ZERO vendor
+ * knowledge baked in.
+ */
+export interface DumpOverview {
+	totalBlocks: number;
+	/** Blocks that carry a decoded struct tree. */
+	decodedBlocks: number;
+	/** Count of distinct decoded-structure shapes (fingerprints). */
+	distinctStructures: number;
+	/** Blocks grouped by their numeric name family (`Foo3` → `Foo*`), top-N. */
+	nameFamilies: CountEntry[];
+	/** Blocks grouped by decoded-structure fingerprint, top-N. */
+	structureGroups: { label: string; fingerprint: string; count: number }[];
+	/** Value histograms for each vendor-neutral attribute (column), top-N each. */
+	attributes: { key: string; label: string; values: CountEntry[] }[];
+	truncated: { nameFamilies: boolean; structureGroups: boolean };
+}
+
 export interface CreateNoteInput {
 	/** Anchor to a named block's byte range (preferred), or use start/end. */
 	blockName?: string;
@@ -206,7 +235,98 @@ export class NvmCapabilities {
 		return this.page(blocks.map(b => this.summary(b)), opts?.offset, opts?.limit);
 	}
 
-	/** Search blocks by case-insensitive substring of name/id, or a hex/decimal offset (paged). */
+	/**
+	 * Whole-dump aggregate (computed over ALL blocks, never truncated) so the
+	 * model can count exactly. Buckets are derived generically from block
+	 * metadata — no vendor semantics.
+	 */
+	public describeDump(): DumpOverview {
+		const blocks = this.activeBlocks();
+		const MAX_FAMILIES = 40;
+		const MAX_GROUPS = 20;
+		const MAX_ATTRS = 12;
+		const MAX_ATTR_VALUES = 12;
+
+		let decodedBlocks = 0;
+		const famCount = new Map<string, number>();
+		const fpCount = new Map<string, number>();
+		const fpLabel = new Map<string, string>();
+		const attrs = new Map<string, { label: string; values: Map<string, number> }>();
+
+		for (const b of blocks) {
+			if (b.decoded?.length) {
+				decodedBlocks++;
+			}
+			const name = b.name ?? b.id;
+			const fam = nameFamilyGlob(name);
+			famCount.set(fam, (famCount.get(fam) ?? 0) + 1);
+			const fp = fingerprintBlock(b);
+			if (fp !== "none") {
+				fpCount.set(fp, (fpCount.get(fp) ?? 0) + 1);
+				if (!fpLabel.has(fp)) {
+					fpLabel.set(fp, fam);
+				}
+			}
+			for (const a of b.attributes ?? []) {
+				let entry = attrs.get(a.key);
+				if (!entry) {
+					entry = { label: a.label, values: new Map() };
+					attrs.set(a.key, entry);
+				}
+				const v = String(a.value);
+				entry.values.set(v, (entry.values.get(v) ?? 0) + 1);
+			}
+		}
+
+		const topCounts = (m: Map<string, number>, n: number): CountEntry[] =>
+			[...m.entries()]
+				.map(([key, count]) => ({ key, count }))
+				.sort((x, y) => y.count - x.count)
+				.slice(0, n);
+
+		const groups = [...fpCount.entries()]
+			.map(([fingerprint, count]) => ({
+				label: fpLabel.get(fingerprint) ?? fingerprint,
+				fingerprint,
+				count,
+			}))
+			.sort((x, y) => y.count - x.count);
+
+		return {
+			totalBlocks: blocks.length,
+			decodedBlocks,
+			distinctStructures: fpCount.size,
+			nameFamilies: topCounts(famCount, MAX_FAMILIES),
+			structureGroups: groups.slice(0, MAX_GROUPS),
+			attributes: [...attrs.entries()].slice(0, MAX_ATTRS).map(([key, e]) => ({
+				key,
+				label: e.label,
+				values: topCounts(e.values, MAX_ATTR_VALUES),
+			})),
+			truncated: {
+				nameFamilies: famCount.size > MAX_FAMILIES,
+				structureGroups: groups.length > MAX_GROUPS,
+			},
+		};
+	}
+
+	/** True when any decoded node name (recursively) contains the lowercased query. */
+	private decodedNameMatches(nodes: NvmDecodedNode[] | undefined, q: string): boolean {
+		for (const n of nodes ?? []) {
+			if (n.name.toLowerCase().includes(q)) {
+				return true;
+			}
+			if (n.children && this.decodedNameMatches(n.children, q)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Search blocks by case-insensitive substring of name/id, a matching
+	 * attribute label/value, a decoded field name, or a hex/decimal offset (paged).
+	 */
 	public searchBlocks(query: string, opts?: { limit?: number; offset?: number }): Page<BlockSummary> {
 		const blocks = this.activeBlocks();
 		const q = (query ?? "").trim().toLowerCase();
@@ -218,6 +338,16 @@ export class NvmCapabilities {
 		const matched = blocks.filter(b => {
 			const name = (b.name ?? b.id).toLowerCase();
 			if (name.includes(q) || b.id.toLowerCase().includes(q)) {
+				return true;
+			}
+			if (
+				(b.attributes ?? []).some(
+					a => a.label.toLowerCase().includes(q) || String(a.value).toLowerCase().includes(q),
+				)
+			) {
+				return true;
+			}
+			if (this.decodedNameMatches(b.decoded, q)) {
 				return true;
 			}
 			return !Number.isNaN(asNum) && asNum >= b.offset && asNum < b.offset + b.length;

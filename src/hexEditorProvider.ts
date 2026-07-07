@@ -32,7 +32,11 @@ import { HexEditorRegistry } from "./hexEditorRegistry";
 import { AnnotationService } from "./nvm/annotations/annotationService";
 import { addBlockToCustomView } from "./nvm/customViews/addToView";
 import { CustomViewService } from "./nvm/customViews/customViewService";
-import { configuredLayoutRoots, getDependencyResolver } from "./nvm/discovery/fileIndex";
+import {
+	configuredLayoutRoots,
+	getDependencyResolver,
+	invalidateDependencyResolver,
+} from "./nvm/discovery/fileIndex";
 import { EngineManager } from "./nvm/engines/engineManager";
 import {
 	applyPalette,
@@ -76,20 +80,39 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 		annotations: AnnotationService,
 		customViews: CustomViewService,
 	): vscode.Disposable {
-		return vscode.window.registerCustomEditorProvider(
+		const provider = new HexEditorProvider(
+			context,
+			telemetryReporter,
+			dataInspectorView,
+			registry,
+			annotations,
+			customViews,
+		);
+		const editor = vscode.window.registerCustomEditorProvider(
 			HexEditorProvider.viewType,
-			new HexEditorProvider(
-				context,
-				telemetryReporter,
-				dataInspectorView,
-				registry,
-				annotations,
-				customViews,
-			),
+			provider,
 			{
 				supportsMultipleEditorsPerDocument: false,
 			},
 		);
+		// Manual "reparse the active dump" command — for when a layout descriptor,
+		// declared source file or engine changed and the user wants fresh blocks
+		// without closing and reopening the file.
+		const reloadCmd = vscode.commands.registerCommand("nvmStudio.nvm.reloadLayout", () =>
+			provider.reloadActiveNvmLayout(),
+		);
+		// When the discovery roots change, re-parse every open dump so newly found
+		// descriptors / source files take effect without a reopen.
+		const cfgWatch = vscode.workspace.onDidChangeConfiguration(e => {
+			if (
+				e.affectsConfiguration("nvmstudio.nvm.workspaceRoots") ||
+				e.affectsConfiguration("nvmstudio.nvm.layoutRoots") ||
+				e.affectsConfiguration("hexeditor.nvm.workspaceRoots")
+			) {
+				void provider.reloadAllNvmLayouts();
+			}
+		});
+		return vscode.Disposable.from(editor, reloadCmd, cfgWatch);
 	}
 
 	private static readonly viewType = "hexEditor.hexedit";
@@ -108,6 +131,13 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 	private get engineManager(): EngineManager {
 		return (this._engineManager ??= new EngineManager(this._context));
 	}
+
+	/**
+	 * Per-open-document callback that re-parses the dump and pushes fresh NVM
+	 * blocks to its webview. Used by the manual reload command, the config-change
+	 * watcher, and the descriptor/source/engine file watchers.
+	 */
+	private readonly _nvmReloaders = new Map<HexDocument, () => Promise<void>>();
 
 	async openCustomDocument(
 		uri: vscode.Uri,
@@ -205,72 +235,7 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 		// Auto-detect NVM structure for the opened binary. Layout comes ONLY from
 		// `*.nvmlayout.json` descriptors (near the dump / in ./conf / ../conf):
 		// the registered adapters run against them; nothing else produces a layout.
-		(async () => {
-			try {
-				const fsPath = document.uri.fsPath;
-				if (!fsPath) return;
-				// compute directory using string-safe operations to avoid importing node 'path'
-				const dir = fsPath.replace(/[\\/][^\\/]+$/, "");
-
-				const result = await this.tryLoadNvmBlocks(document, fsPath, dir);
-				if (result && result.resolved.blocks.length > 0) {
-					const allBlocks = result.resolved.blocks;
-					this._registry.setNvmBlocks(document, allBlocks);
-
-					// Staged push: some engines (e.g. Vector FEE V3) recover hundreds
-					// of historical (`stale`) block copies. Push the current versions
-					// first so the editor is instantly interactive, then push the full
-					// set on the next tick so the history fills in without blocking.
-					const currentBlocks = allBlocks.filter(
-						b => !(b.raw as { stale?: boolean } | undefined)?.stale,
-					);
-					const hasStale = currentBlocks.length !== allBlocks.length;
-					messageHandler.sendEvent({
-						type: MessageType.SetNvmBlocks,
-						blocks: hasStale ? currentBlocks : allBlocks,
-					});
-					if (hasStale) {
-						setTimeout(() => {
-							messageHandler.sendEvent({
-								type: MessageType.SetNvmBlocks,
-								blocks: allBlocks,
-							});
-						}, 0);
-					}
-					console.debug(
-						`Auto-loaded NVM layout [${result.resolved.providerId}] ${fsPath} -> ${allBlocks.length} blocks` +
-							(hasStale ? ` (${currentBlocks.length} current, ${allBlocks.length - currentBlocks.length} stale deferred)` : ""),
-					);
-
-					// Hot reload: when the loaded external engine script changes,
-					// re-parse the document and push fresh blocks to this webview.
-					if (result.engineScriptUri) {
-						const scriptUri = result.engineScriptUri;
-						const parent = vscode.Uri.joinPath(scriptUri, "..");
-						const base = scriptUri.path.replace(/^.*\//, "");
-						const watcher = vscode.workspace.createFileSystemWatcher(
-							new vscode.RelativePattern(parent, base),
-						);
-						const reload = async () => {
-							invalidateExternalEngine(scriptUri.fsPath);
-							try {
-								const next = await this.tryLoadNvmBlocks(document, fsPath, dir);
-								const blocks = next?.resolved.blocks ?? [];
-								this._registry.setNvmBlocks(document, blocks);
-								messageHandler.sendEvent({ type: MessageType.SetNvmBlocks, blocks });
-							} catch (e) {
-								console.warn("NVM engine hot reload failed:", e);
-							}
-						};
-						watcher.onDidChange(reload);
-						watcher.onDidCreate(reload);
-						webviewPanel.onDidDispose(() => watcher.dispose());
-					}
-				}
-			} catch (e) {
-				console.warn("NVM layout auto-detection failed:", e);
-			}
-		})();
+		this.setupNvmLayout(document, webviewPanel, messageHandler);
 
 		// Setup initial content for the webview
 		webviewPanel.webview.options = {
@@ -278,6 +243,174 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 		};
 		webviewPanel.webview.html = this.getHtmlForWebview(webviewPanel.webview);
 		webviewPanel.webview.onDidReceiveMessage(e => messageHandler.handleMessage(e));
+	}
+
+	/**
+	 * Wire up NVM layout detection for one opened dump: run an initial parse and
+	 * push, register a reload callback (for the manual command + config watcher),
+	 * and watch the layout descriptors / declared source files / engine script so
+	 * edits refresh the blocks live without reopening the file.
+	 */
+	private setupNvmLayout(
+		document: HexDocument,
+		webviewPanel: vscode.WebviewPanel,
+		messageHandler: ExtensionHostMessageHandler,
+	): void {
+		const fsPath = document.uri.fsPath;
+		if (!fsPath) {
+			return;
+		}
+		// compute directory using string-safe operations to avoid importing node 'path'
+		const dir = fsPath.replace(/[\\/][^\\/]+$/, "");
+		const disposables: vscode.Disposable[] = [];
+
+		// The engine hot-reload watcher is (re)created whenever the resolved engine
+		// script path changes across reloads.
+		let engineWatcher: vscode.Disposable | undefined;
+		let engineScript: string | undefined;
+
+		const doLoad = async (): Promise<void> => {
+			try {
+				const result = await this.tryLoadNvmBlocks(document, fsPath, dir);
+				const allBlocks = result?.resolved.blocks ?? [];
+				this._registry.setNvmBlocks(document, allBlocks.length > 0 ? allBlocks : undefined);
+
+				// Staged push: some engines (e.g. Vector FEE V3) recover hundreds
+				// of historical (`stale`) block copies. Push the current versions
+				// first so the editor is instantly interactive, then push the full
+				// set on the next tick so the history fills in without blocking.
+				const currentBlocks = allBlocks.filter(
+					b => !(b.raw as { stale?: boolean } | undefined)?.stale,
+				);
+				const hasStale = currentBlocks.length !== allBlocks.length;
+				messageHandler.sendEvent({
+					type: MessageType.SetNvmBlocks,
+					blocks: hasStale ? currentBlocks : allBlocks,
+				});
+				if (hasStale) {
+					setTimeout(() => {
+						messageHandler.sendEvent({
+							type: MessageType.SetNvmBlocks,
+							blocks: allBlocks,
+						});
+					}, 0);
+				}
+				if (result && allBlocks.length > 0) {
+					console.debug(
+						`Auto-loaded NVM layout [${result.resolved.providerId}] ${fsPath} -> ${allBlocks.length} blocks` +
+							(hasStale ? ` (${currentBlocks.length} current, ${allBlocks.length - currentBlocks.length} stale deferred)` : ""),
+					);
+				}
+
+				// (Re)wire the engine hot-reload watcher for the resolved script.
+				const scriptUri = result?.engineScriptUri;
+				if (scriptUri?.fsPath !== engineScript) {
+					engineWatcher?.dispose();
+					engineWatcher = undefined;
+					engineScript = scriptUri?.fsPath;
+					if (scriptUri) {
+						const parent = vscode.Uri.joinPath(scriptUri, "..");
+						const base = scriptUri.path.replace(/^.*\//, "");
+						const watcher = vscode.workspace.createFileSystemWatcher(
+							new vscode.RelativePattern(parent, base),
+						);
+						const onEngineChange = async () => {
+							invalidateExternalEngine(scriptUri.fsPath);
+							await doLoad();
+						};
+						watcher.onDidChange(onEngineChange);
+						watcher.onDidCreate(onEngineChange);
+						engineWatcher = watcher;
+						disposables.push(watcher);
+					}
+				}
+			} catch (e) {
+				console.warn("NVM layout auto-detection failed:", e);
+			}
+		};
+
+		// A reload drops the cached dependency index (so newly configured roots /
+		// moved source files are re-discovered) and then re-parses + re-pushes.
+		const reload = async (): Promise<void> => {
+			invalidateDependencyResolver();
+			await doLoad();
+		};
+		this._nvmReloaders.set(document, reload);
+		disposables.push(new vscode.Disposable(() => this._nvmReloaders.delete(document)));
+
+		// Watch the descriptor + nearby declared-source files for edits.
+		this.wireLayoutWatchers(dir, reload, disposables);
+
+		webviewPanel.onDidDispose(() => {
+			engineWatcher?.dispose();
+			disposeAll(disposables);
+		});
+
+		void doLoad();
+	}
+
+	/**
+	 * Create file-system watchers over the directories where layout descriptors
+	 * and their declared source files live (the dump dir, sibling/parent `conf/`,
+	 * and every configured `layoutRoots` folder + its `conf/`). Edits to
+	 * `*.nvmlayout.json` / `*.c` / `*.h` / `*.arxml` trigger a debounced reparse.
+	 * Files resolved only via `workspaceRoots` are covered by the manual reload
+	 * command instead (watching whole project trees would be too costly).
+	 */
+	private wireLayoutWatchers(
+		dir: string,
+		reload: () => Promise<void>,
+		disposables: vscode.Disposable[],
+	): void {
+		const parent = dir.replace(/[\\/][^\\/]+$/, "");
+		const dirs = new Set<string>([dir, `${dir}/conf`, `${parent}/conf`]);
+		for (const root of configuredLayoutRoots()) {
+			dirs.add(root);
+			dirs.add(`${root}/conf`);
+		}
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		const debounced = () => {
+			if (timer) {
+				clearTimeout(timer);
+			}
+			timer = setTimeout(() => void reload(), 250);
+		};
+		disposables.push(new vscode.Disposable(() => timer && clearTimeout(timer)));
+		for (const d of dirs) {
+			try {
+				const watcher = vscode.workspace.createFileSystemWatcher(
+					new vscode.RelativePattern(vscode.Uri.file(d), "*.{nvmlayout.json,c,h,arxml}"),
+				);
+				watcher.onDidChange(debounced);
+				watcher.onDidCreate(debounced);
+				watcher.onDidDelete(debounced);
+				disposables.push(watcher);
+			} catch {
+				// An invalid directory is skipped rather than aborting setup.
+			}
+		}
+	}
+
+	/** Re-parse the active dump and push fresh blocks (manual reload command). */
+	public async reloadActiveNvmLayout(): Promise<void> {
+		const doc = this._registry.activeDocument;
+		const reload = doc && this._nvmReloaders.get(doc);
+		if (!reload) {
+			void vscode.window.showInformationMessage(
+				vscode.l10n.t("No active NVM dump to reload."),
+			);
+			return;
+		}
+		await reload();
+		void vscode.window.setStatusBarMessage(vscode.l10n.t("NVM layout reloaded."), 2000);
+	}
+
+	/** Re-parse every open dump (e.g. after the discovery roots settings change). */
+	public async reloadAllNvmLayouts(): Promise<void> {
+		invalidateDependencyResolver();
+		for (const reload of this._nvmReloaders.values()) {
+			await reload();
+		}
 	}
 
 	/**

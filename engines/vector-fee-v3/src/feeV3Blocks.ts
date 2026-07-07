@@ -17,6 +17,7 @@ import {
 	FeeV3StructOptions,
 	matchBinding,
 } from "./feeV3Structs";
+import { nvmCfgByName, parseNvmCfg } from "./nvmCfg";
 import { EngineSdk, NvmBlock, NvmField } from "./types";
 import { FeeV3Chunk, parseVectorFeeV3 } from "./vectorFeeV3";
 
@@ -65,8 +66,13 @@ export interface FeeV3StructureTemplate {
 	chunkHeader?: FeeV3FieldTemplate[];
 	marker?: { name: string; kind: string; color?: string };
 	payload?: { name: string; kind: string; color?: string };
-	/** Stored bytes after the NvM payload up to the aligned size (MAC/CRC + padding). */
+	/**
+	 * Integrity-check bytes (CMAC / CRC) that follow the business data. Sized from
+	 * `NvM_Cfg.c` `NvMacSize` when available, else the whole post-data remainder.
+	 */
 	payloadExtra?: { name: string; kind: string; color?: string };
+	/** Alignment padding after data + integrity, up to the stored payload size. */
+	payloadPadding?: { name: string; kind: string; color?: string };
 	/** Fixed 8-byte trailer written by Fee_InternalFillInstanceBufferTrailerPage. */
 	chunkTrailer?: { name: string; kind: string; color?: string };
 	/** The next-chunk link at the tail; the link-table slot points here. */
@@ -95,7 +101,8 @@ export const DEFAULT_FEE_V3_STRUCTURE: Required<FeeV3StructureTemplate> = {
 	],
 	marker: { name: "Padding / start marker", kind: "marker" },
 	payload: { name: "Payload", kind: "payload" },
-	payloadExtra: { name: "MAC / CRC / padding", kind: "mac" },
+	payloadExtra: { name: "MAC / CRC", kind: "mac" },
+	payloadPadding: { name: "padding", kind: "padding" },
 	chunkTrailer: { name: "chunk trailer", kind: "chunkTrailer" },
 	nextLink: { name: "next chunk link", kind: "nextLink" },
 };
@@ -186,6 +193,11 @@ export function buildFeeV3Blocks(
 	};
 
 	const byTag = feeLcfgSource ? feeLcfgByTag(parseFeeLcfg(feeLcfgSource)) : undefined;
+	// Authoritative business-data / integrity sizing (NvMNvBlockLength, NvMacSize)
+	// keyed by block name. Optional: absent when the descriptor declares no
+	// `nvmCfg` source, in which case the FEE payload length is used as before.
+	const nvmSource = sources.nvmCfg || sources["nvm_cfg.c"];
+	const byName = nvmSource ? nvmCfgByName(parseNvmCfg(nvmSource)) : undefined;
 	const base = result.baseAddress;
 	const blocks: NvmBlock[] = [];
 
@@ -254,9 +266,17 @@ export function buildFeeV3Blocks(
 	// 2) Data blocks: one per chunk.
 	for (const c of result.chunks) {
 		const def = byTag?.get(c.tag);
+		const blockName = def?.name ?? `Tag ${c.tag}`;
 		const rawSize = c.size; // full stored payload (link-table payloadSize)
-		// NvM business length from Fee_Lcfg; clamp so extra >= 0 even if config drifts.
-		const netLength = Math.min(def?.payloadLength ?? rawSize, rawSize);
+
+		// Split the stored payload into business data / integrity (CMAC) / padding.
+		// NvM_Cfg.c is authoritative: stored = NvMNvBlockLength + NvMacSize + padding.
+		// Without it, fall back to the FEE payload length as the business length and
+		// treat the remainder as one integrity/padding region (legacy behaviour).
+		const meta = byName?.get(blockName);
+		const dataLength = Math.min(meta?.nvBlockLength ?? def?.payloadLength ?? rawSize, rawSize);
+		const macLength = meta ? Math.min(meta.macSize, Math.max(0, rawSize - dataLength)) : 0;
+		const paddingLength = Math.max(0, rawSize - dataLength - macLength);
 
 		const headerOffset = c.headerAddress - base;
 		const payloadOffset = c.payloadAddress - base;
@@ -269,13 +289,12 @@ export function buildFeeV3Blocks(
 
 		// The link-table slot points at the chunk TAIL (the next-chunk link field).
 		// Between the stored payload and that link sits the fixed chunk trailer.
-		const extraLength = Math.max(0, rawSize - netLength); // MAC/CRC + padding
 		const trailerStart = payloadOffset + rawSize;
 		const nextLinkOffset = c.linkTargetAddress - base;
 		const nextLinkLength = 8;
 		const hasTail = nextLinkOffset >= trailerStart;
 		const trailerLength = hasTail ? nextLinkOffset - trailerStart : 0;
-		const blockEnd = hasTail ? nextLinkOffset + nextLinkLength : payloadOffset + netLength;
+		const blockEnd = hasTail ? nextLinkOffset + nextLinkLength : trailerStart;
 		const blockLength = blockEnd - headerOffset;
 
 		// Unique per-instance id/unit so every copy of the same block (versions in
@@ -288,11 +307,31 @@ export function buildFeeV3Blocks(
 		if (markerLength > 0) {
 			fields.push(regionField(struct.marker, markerOffset, markerLength, blockUnit));
 		}
-		if (netLength > 0) {
-			fields.push(regionField(struct.payload, payloadOffset, netLength, blockUnit));
+		if (dataLength > 0) {
+			fields.push(regionField(struct.payload, payloadOffset, dataLength, blockUnit));
 		}
-		if (extraLength > 0) {
-			fields.push(regionField(struct.payloadExtra, payloadOffset + netLength, extraLength, blockUnit));
+		if (meta) {
+			// Known split: business data, then CMAC/CRC, then alignment padding.
+			if (macLength > 0) {
+				fields.push(
+					regionField(struct.payloadExtra, payloadOffset + dataLength, macLength, blockUnit),
+				);
+			}
+			if (paddingLength > 0) {
+				fields.push(
+					regionField(
+						struct.payloadPadding,
+						payloadOffset + dataLength + macLength,
+						paddingLength,
+						blockUnit,
+					),
+				);
+			}
+		} else if (paddingLength > 0) {
+			// Unknown split: one integrity/padding region after the data.
+			fields.push(
+				regionField(struct.payloadExtra, payloadOffset + dataLength, paddingLength, blockUnit),
+			);
 		}
 		if (trailerLength > 0) {
 			fields.push(regionField(struct.chunkTrailer, trailerStart, trailerLength, blockUnit));
@@ -312,18 +351,17 @@ export function buildFeeV3Blocks(
 
 		// Business-struct decode: if this block is bound to a struct AND has net
 		// business payload, decode it into a value tree the inspector renders.
-		const blockName = def?.name ?? `Tag ${c.tag}`;
 		let decoded;
-		if (structResolver && netLength > 0 && (structResolver.decodeStale || !c.stale)) {
+		if (structResolver && dataLength > 0 && (structResolver.decodeStale || !c.stale)) {
 			const binding = matchBinding(structResolver, {
 				name: blockName,
 				tag: c.tag,
 				identityKey: `tag:0x${c.tag.toString(16)}`,
 			});
 			if (binding) {
-				// c.data is the full stored payload view; the net business slice is
-				// its first `netLength` bytes, based at payloadOffset (absolute).
-				const businessBytes = c.data.subarray(0, netLength);
+				// The business slice is the first `dataLength` bytes of the stored
+				// payload (data only — never the trailing CMAC/CRC or padding).
+				const businessBytes = c.data.subarray(0, dataLength);
 				decoded = decodeBoundBlock(structResolver, binding, businessBytes, payloadOffset);
 			}
 		}
@@ -340,7 +378,8 @@ export function buildFeeV3Blocks(
 				consistent: c.consistent,
 				datasetIndex: c.datasetIndex,
 				mgmtType: c.mgmtType,
-				netLength,
+				netLength: dataLength,
+				macLength,
 				rawSize,
 				stale: c.stale,
 			},
@@ -359,7 +398,10 @@ export function buildFeeV3Blocks(
 				{ key: "mgmt", label: "Mgmt", value: mgmtLabel(c.mgmtType), kind: "mgmt" },
 				{ key: "dataset", label: "Dataset", value: c.datasetIndex },
 				{ key: "size", label: "Size", value: rawSize },
-				{ key: "payload", label: "Payload", value: netLength },
+				{ key: "payload", label: "Payload", value: dataLength },
+				...(macLength > 0
+					? [{ key: "mac", label: "MAC / CRC", value: macLength, kind: "mac" }]
+					: []),
 			],
 			fields,
 			decoded,

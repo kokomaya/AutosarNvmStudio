@@ -1,0 +1,104 @@
+{
+  "_comment": "EXAMPLE: business-struct decoding on top of the standard Vector FEE V3 layout. Decodes SafeSection reset context (FS_SafeSection_Types.h + FS_SafeSection_Prv.h + FS_Reset_Types.h) and DEM primary entries (Dem_Lcfg.h). The engine parses the C headers into a struct+enum catalog; the inline `structCatalog` only PATCHES fields with rich `format`s + the union discriminator + gap-fill enums not scrapeable from the headers. Block->struct binding is the engine's decision via `blockStructs`. NOTE: `match.fileNameIncludes` + the struct source names are project-specific — copy this next to a matching dump and adjust. Requires `nvmCfg` (NvM_Cfg.c) so structs decode only the business data, never the CMAC.",
+  "vendor": "Vector MICROSAR FEE V3 (struct decode example)",
+  "engine": "vector-fee-v3",
+  "sources": {
+    "feeLcfg": "Fee_Lcfg.c",
+    "nvmCfg": "NvM_Cfg.c",
+    "safeSecPrv": "FS_SafeSection_Prv.h",
+    "resetTypes": "FS_Reset_Types.h",
+    "safeSecTypes": "FS_SafeSection_Types.h",
+    "demLcfg": "Dem_Lcfg.h"
+  },
+  "match": { "ext": [".mot", ".srec", ".s19", ".s28", ".s37", ".hex"], "fileNameIncludes": ["NVM_22"] },
+  "options": {
+    "alignment": 8,
+    "numberOfSectors": 2,
+    "sectorSize": 196608,
+    "structs": {
+      "_comment": "C headers parsed together (order matters: Prv defines sizes used by Types). ARXML sources would be listed here too and parsed via arxmlStructs.",
+      "fromSources": ["safeSecPrv", "resetTypes", "safeSecTypes", "demLcfg"]
+    },
+    "enumsFromDefines": [
+      {
+        "_comment": "Scrape the AUTOSAR DEM event-id table (#define DemConf_DemEventParameter_<NAME> <id>u) from Dem_Lcfg.h into the DemEventName enum, so a decoded EventId shows its symbolic name. Vendor-blind: the plugin only knows '#define <prefix><NAME> <int>'; the prefix is config.",
+        "enum": "DemEventName",
+        "source": "demLcfg",
+        "prefix": "DemConf_DemEventParameter_",
+        "width": 2
+      }
+    ],
+    "structCatalog": {
+      "_comment": "Overlay: patches parsed structs by field name (adds `format`, union discriminator/cases) and adds gap-fill enums. Field byte layout still comes from the C headers.",
+      "structs": {
+        "FS_SafeSection_t_Data": {
+          "name": "FS_SafeSection_t_Data",
+          "fields": [
+            { "name": "u_MapVersion", "format": { "kind": "both" } },
+            { "name": "e_SectionState", "format": { "kind": "enum", "enum": "FS_SafeSection_te_State" } }
+          ]
+        },
+        "FS_SafeSection_t_FsData": {
+          "name": "FS_SafeSection_t_FsData",
+          "fields": [
+            { "name": "e_SharedInfoID", "format": { "kind": "enum", "enum": "FS_SafeSection_te_SharedID" } },
+            { "name": "e_ResetReason", "format": { "kind": "enum", "enum": "FS_Reset_t_ResetReason" } },
+            { "name": "a_ResetContextData", "format": { "kind": "ascii" } },
+            { "name": "u_CycleCounter", "format": { "kind": "duration", "unit": "ms" } },
+            { "name": "u_SwVersion", "format": { "kind": "version", "buildEnum": "FS_InfoBlockBuildType" } },
+            {
+              "name": "Shared",
+              "discriminator": "e_SharedInfoID",
+              "cases": {
+                "1": "Mcu", "2": "Task", "3": "Os", "4": "Voltage",
+                "5": "OsState", "6": "Fccu", "default": "Mcu"
+              }
+            }
+          ]
+        },
+        "FS_SafeSection_t_McuException": {
+          "name": "FS_SafeSection_t_McuException",
+          "fields": [
+            { "name": "u_ExceptFlags", "format": { "kind": "hex" } },
+            { "name": "u_MachineState", "format": { "kind": "hex" } },
+            { "name": "u_InstrAddress", "format": { "kind": "hex" } },
+            { "name": "u_DataAddress", "format": { "kind": "hex" } },
+            { "name": "u_StackPointer", "format": { "kind": "hex" } }
+          ]
+        },
+        "Dem_Cfg_PrimaryEntryType": {
+          "name": "Dem_Cfg_PrimaryEntryType",
+          "fields": [
+            { "name": "Timestamp", "format": { "kind": "hex" } },
+            { "name": "EventId", "format": { "kind": "enum", "enum": "DemEventName" } }
+          ]
+        }
+      },
+      "enums": {
+        "FS_InfoBlockBuildType": {
+          "name": "FS_InfoBlockBuildType",
+          "_comment": "SW-version trailing build-type byte (not in FS_Reset_Types.h).",
+          "values": { "0": "BT_DO_NOT_USE", "1": "BT_PRERELEASE", "2": "BT_TESTVERSION", "3": "BT_NIGHTLYBUILDS", "16": "BT_RELEASE" }
+        },
+        "DemUdsStatus": {
+          "name": "DemUdsStatus",
+          "_comment": "UDS DEM status-byte bit labels (bit index -> label), used with format.kind=bitflags. Not present in Dem_Lcfg.h.",
+          "values": {
+            "0": "Test failed",
+            "1": "Test failed this operation cycle",
+            "2": "Pending DTC",
+            "3": "Confirmed DTC",
+            "4": "Test not completed since last clear",
+            "5": "Test failed since last clear",
+            "6": "Test not completed this oper. cycle",
+            "7": "Warning indicator requested"
+          }
+        }
+      }
+    },
+    "blockStructs": [
+      { "match": { "nameGlob": "Nvm_SafeSection_Data_Record*" }, "struct": "FS_SafeSection_t_Data" },
+      { "match": { "nameGlob": "DemPrimaryDataBlock*" }, "struct": "Dem_Cfg_PrimaryEntryType" }
+    ]
+  }
+}
