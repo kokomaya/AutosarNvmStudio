@@ -32,10 +32,11 @@ if (process.env.NVM_ENGINE_SERVER_SKIP_EXE === "1") {
 
 const pkgBin = process.platform === "win32" ? "pkg.cmd" : "pkg";
 const localPkg = join(repoRoot, "node_modules", ".bin", pkgBin);
+const target = process.env.NVM_ENGINE_SERVER_TARGET || "node18-win-x64";
 const pkgCmd = existsSync(localPkg) ? localPkg : "npx";
 const pkgArgs = existsSync(localPkg)
-	? [distEntry, "--target", process.env.NVM_ENGINE_SERVER_TARGET || "node20-win-x64", "--output", distExe]
-	: ["pkg", distEntry, "--target", process.env.NVM_ENGINE_SERVER_TARGET || "node20-win-x64", "--output", distExe];
+	? [distEntry, "--target", target, "--output", distExe]
+	: ["-y", "pkg@5.8.1", distEntry, "--target", target, "--output", distExe];
 
 const result = spawnSync(pkgCmd, pkgArgs, {
 	cwd: repoRoot,
@@ -44,7 +45,10 @@ const result = spawnSync(pkgCmd, pkgArgs, {
 });
 
 if (result.status !== 0) {
-	throw new Error("Failed to generate nvm-engine-install-server executable.");
+	throw new Error(
+		`Failed to generate nvm-engine-install-server executable with target \"${target}\". ` +
+			"Try setting NVM_ENGINE_SERVER_TARGET to a pkg-supported target, e.g. node18-win-x64.",
+	);
 }
 
 if (process.platform !== "win32") {
