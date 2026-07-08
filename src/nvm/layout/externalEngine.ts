@@ -138,3 +138,127 @@ export async function loadExternalEngine(
 export function invalidateExternalEngine(absPath: string): void {
 	engineCache.delete(absPath);
 }
+
+// --- project-local pre-processing hooks --------------------------------------
+
+/**
+ * Services the core hands a hook, in addition to the input bundle. Keeps the
+ * hook self-sufficient (persistent cache, its descriptor options, logging)
+ * without the core knowing anything about what the hook does.
+ */
+export interface HookContext {
+	/**
+	 * A persistent, hook-private directory the core has created. Use it to cache
+	 * downloads across sessions and implement your own versioned retention. Path
+	 * is stable per hook id.
+	 */
+	storageDir: string;
+	/**
+	 * The descriptor's `options` object — the config lives in the descriptor (in
+	 * the workspace), the hook only reads it. This is the clean split: the plugin
+	 * owns configuration, the hook owns behaviour.
+	 */
+	options?: Record<string, unknown>;
+	/** Append a line to the user-visible NVM Studio log. */
+	log(message: string): void;
+}
+
+/**
+ * What a hook may return. Either a plain value (treated as {@link data}) or this
+ * shape to also contribute extra source files that get merged into the engine's
+ * `input.sources` (keyed by logical name) — e.g. files the hook downloaded.
+ */
+export interface HookResult {
+	/** Opaque data for the engine, exposed as `input.hookData`. */
+	data?: unknown;
+	/** Extra source files (logicalName -> content) merged into `input.sources`. */
+	sources?: Record<string, string>;
+}
+
+/**
+ * A project-local pre-processing hook, declared by a descriptor's `hookScript`.
+ * It runs BEFORE the engine (same trust gate) and may return opaque data (for
+ * `input.hookData`) and/or extra source files (merged into `input.sources`).
+ * The core never interprets the data. `run` may be async.
+ */
+export interface ExternalHook {
+	/** Stable hook id (informational; also names the private cache dir). */
+	id: string;
+	/** Produce pre-processing data and/or extra sources from the input bundle. */
+	run(
+		input: LayoutInput,
+		ctx: HookContext,
+	): HookResult | unknown | Promise<HookResult | unknown>;
+}
+
+/** The module shape a hook script must export. */
+export interface ExternalHookModule {
+	createHook(sdk: EngineSdk): ExternalHook;
+}
+
+interface HookCacheEntry {
+	mtime: number;
+	hook: ExternalHook;
+}
+
+/** Loaded hooks keyed by absolute path, invalidated when the file's mtime changes. */
+const hookCache = new Map<string, HookCacheEntry>();
+
+function validateHook(value: unknown): value is ExternalHook {
+	return (
+		!!value &&
+		typeof value === "object" &&
+		typeof (value as ExternalHook).id === "string" &&
+		typeof (value as ExternalHook).run === "function"
+	);
+}
+
+function pickHookFactory(mod: unknown): ExternalHookModule["createHook"] | undefined {
+	const candidates = [
+		(mod as ExternalHookModule)?.createHook,
+		(mod as { default?: ExternalHookModule })?.default?.createHook,
+	];
+	return candidates.find(c => typeof c === "function");
+}
+
+/**
+ * Load (or return a cached) project-local hook from an absolute path. Mirrors
+ * {@link loadExternalEngine}: the `mtime` both cache-busts the ESM import and
+ * keys the cache. Callers MUST apply the same security gate used for engines.
+ *
+ * @throws when the module cannot be imported or does not expose a valid hook.
+ */
+export async function loadExternalHook(
+	absPath: string,
+	mtime: number,
+	sdk: EngineSdk = createEngineSdk(),
+): Promise<ExternalHook> {
+	if (!isNodeHost()) {
+		throw new Error("External NVM hooks are only available in the desktop (Node) host.");
+	}
+
+	const cached = hookCache.get(absPath);
+	if (cached && cached.mtime === mtime) {
+		return cached.hook;
+	}
+
+	const url = `${pathToFileUrl(absPath)}?t=${mtime}`;
+	const mod = await nativeDynamicImport(url);
+	const factory = pickHookFactory(mod);
+	if (!factory) {
+		throw new Error(`Hook script "${absPath}" does not export createHook(sdk).`);
+	}
+
+	const hook = factory(sdk);
+	if (!validateHook(hook)) {
+		throw new Error(`Hook script "${absPath}" returned an invalid hook (need { id, run }).`);
+	}
+
+	hookCache.set(absPath, { mtime, hook });
+	return hook;
+}
+
+/** Drop a cached hook (used by the hot-reload watcher). */
+export function invalidateExternalHook(absPath: string): void {
+	hookCache.delete(absPath);
+}

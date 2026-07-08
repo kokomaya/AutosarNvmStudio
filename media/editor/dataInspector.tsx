@@ -106,12 +106,14 @@ export const DataInspectorAside: React.FC<{ onInspecting?(isInspecting: boolean)
 							</button>
 						)}
 					</div>
-					<dl>
-						<dt>Offset</dt>
-						<dd>{selectedBlock.offset}</dd>
-						<dt>Length</dt>
-						<dd>{selectedBlock.length}</dd>
-					</dl>
+					<div className={style.nvmMeta}>
+						<span>
+							<span className={style.nvmMetaKey}>Offset</span> {selectedBlock.offset}
+						</span>
+						<span>
+							<span className={style.nvmMetaKey}>Length</span> {selectedBlock.length}
+						</span>
+					</div>
 					{selectedBlock.decoded && selectedBlock.decoded.length > 0 && (
 						<NvmDecodedTree nodes={selectedBlock.decoded} />
 					)}
@@ -148,7 +150,13 @@ export const DataInspectorAside: React.FC<{ onInspecting?(isInspecting: boolean)
 				<NvmTagSection start={inspected.byte} end={inspected.byte + 1} />
 			) : null}
 
-			{inspected ? <InspectorContents columns={2} offset={inspected.byte} /> : null}
+			{inspected ? (
+				<InspectorContents
+					columns={2}
+					offset={inspected.byte}
+					preferDecoded={!!(selectedBlock?.decoded && selectedBlock.decoded.length > 0)}
+				/>
+			) : null}
 		</Suspense>
 	);
 };
@@ -364,7 +372,11 @@ function formatNodeValue(node: NvmDecodedNode): string {
  * native <details> so the tree is collapsible with zero extra state; leaves show
  * `name : value`. Clicking any row reveals and selects the node's bytes.
  */
-const NvmDecodedRow: React.FC<{ node: NvmDecodedNode; depth: number }> = ({ node, depth }) => {
+const NvmDecodedRow: React.FC<{ node: NvmDecodedNode; depth: number; defaultOpen?: boolean }> = ({
+	node,
+	depth,
+	defaultOpen,
+}) => {
 	const ctx = useDisplayContext();
 	const setOffset = useSetRecoilState(select.offset);
 	const columnWidth = useRecoilValue(select.columnWidth);
@@ -386,7 +398,7 @@ const NvmDecodedRow: React.FC<{ node: NvmDecodedNode; depth: number }> = ({ node
 		// children (the expanded bits). Prefer showing that summary; else the type.
 		const summary = formatNodeValue(node);
 		return (
-			<details className={style.nvmDecodedBranch}>
+			<details className={style.nvmDecodedBranch} open={defaultOpen}>
 				<summary style={indent} onClick={reveal}>
 					<span className={style.nvmDecodedName}>{node.name}</span>
 					<span className={style.nvmDecodedMeta}>
@@ -395,7 +407,12 @@ const NvmDecodedRow: React.FC<{ node: NvmDecodedNode; depth: number }> = ({ node
 					</span>
 				</summary>
 				{node.children!.map((child, i) => (
-					<NvmDecodedRow key={`${child.name}:${child.offset}:${i}`} node={child} depth={depth + 1} />
+					<NvmDecodedRow
+						key={`${child.name}:${child.offset}:${i}`}
+						node={child}
+						depth={depth + 1}
+						defaultOpen={defaultOpen}
+					/>
 				))}
 			</details>
 		);
@@ -418,7 +435,7 @@ const NvmDecodedTree: React.FC<{ nodes: NvmDecodedNode[] }> = ({ nodes }) => (
 	<div className={style.nvmDecoded}>
 		<div className={style.nvmDecodedTitle}>Decoded</div>
 		{nodes.map((node, i) => (
-			<NvmDecodedRow key={`${node.name}:${node.offset}:${i}`} node={node} depth={0} />
+			<NvmDecodedRow key={`${node.name}:${node.offset}:${i}`} node={node} depth={0} defaultOpen />
 		))}
 	</div>
 );
@@ -442,45 +459,37 @@ const NvmByteExplain: React.FC<{ offset: number }> = ({ offset }) => {
 	}
 	const value = bytes.length ? bytes[0] : undefined;
 	return (
-		<div className={style.nvmInspector}>
-			<h3>{field.block.name ?? field.block.id}</h3>
-			<dl>
-				<dt>Attribute</dt>
-				<dd>{field.fieldName}</dd>
-				<dt>Kind</dt>
-				<dd>{field.kind}</dd>
-				<dt>Byte</dt>
-				<dd>
-					0x{offset.toString(16).toUpperCase()} (field 0x{field.start.toString(16).toUpperCase()}–0x
-					{field.end.toString(16).toUpperCase()}, {field.end - field.start} B)
-				</dd>
+		<div className={style.nvmByteExplain}>
+			<div className={style.nvmByteRow}>
+				<span className={style.nvmByteName} title={field.block.name ?? field.block.id}>
+					{field.fieldName}
+				</span>
+				<span className={style.nvmByteKind}>{field.kind}</span>
+			</div>
+			<div className={style.nvmByteSub}>
+				byte 0x{offset.toString(16).toUpperCase()} · field 0x
+				{field.start.toString(16).toUpperCase()}–0x{field.end.toString(16).toUpperCase()} (
+				{field.end - field.start} B)
 				{value !== undefined && (
 					<>
-						<dt>Value</dt>
-						<dd>
+						{" · "}
+						<span className={style.nvmByteVal}>
 							0x{value.toString(16).padStart(2, "0").toUpperCase()} · {value} ·{" "}
 							{value.toString(2).padStart(8, "0")}b
-						</dd>
+						</span>
 					</>
 				)}
-				{field.link && (
-					<>
-						<dt>Link</dt>
-						<dd>
-							→ 0x{field.link.targetOffset.toString(16).toUpperCase()}
-							{field.link.label ? ` (${field.link.label})` : ""}
-						</dd>
-					</>
-				)}
-			</dl>
+			</div>
 			{field.link && (
 				<button
+					className={style.nvmLinkBtn}
 					onClick={() => {
 						setOffset(select.startOfRowContainingByte(field.link!.targetOffset, columnWidth));
 						ctx.focusedElement = new FocusedElement(false, field.link!.targetOffset);
 					}}
 				>
-					Jump →{field.link.label ? ` ${field.link.label}` : ""}
+					→ Jump to 0x{field.link.targetOffset.toString(16).toUpperCase()}
+					{field.link.label ? ` (${field.link.label})` : ""}
 				</button>
 			)}
 		</div>
@@ -491,12 +500,19 @@ const NvmByteExplain: React.FC<{ offset: number }> = ({ offset }) => {
 const InspectorContents: React.FC<{
 	offset: number;
 	columns: number;
-}> = ({ offset, columns }) => {
+	/** When a decoded block is in view, give it the spotlight and collapse the
+	 * primitive-types grid by default (it is secondary to the business decode). */
+	preferDecoded?: boolean;
+}> = ({ offset, columns, preferDecoded }) => {
 	const defaultEndianness = useRecoilValue(select.editorSettings).defaultEndianness;
 	const [endianness, setEndianness] = usePersistedState("endianness", defaultEndianness);
-	// Remember whether the primitive-types group is expanded (defaults to open),
-	// mirroring how endianness is persisted across hover/aside inspector views.
-	const [typesOpen, setTypesOpen] = usePersistedState("dataInspectorTypesOpen", true);
+	// Remember whether the primitive-types group is expanded. It defaults open in
+	// plain-hex use, but collapsed when a decoded block is present so the decoded
+	// tree gets the space; each mode persists its own open state.
+	const [typesOpen, setTypesOpen] = usePersistedState(
+		preferDecoded ? "dataInspectorTypesOpenNvm" : "dataInspectorTypesOpen",
+		!preferDecoded,
+	);
 	const target = useFileBytes(offset, lookahead);
 	const dv = new DataView(target.buffer);
 	const le = endianness === Endianness.Little;

@@ -19,13 +19,23 @@
 import * as vscode from "vscode";
 import { DependencyStore } from "./dependencyStore";
 
-/** File extensions worth indexing (config / source / descriptor / engine). */
-const INDEX_GLOB =
-	"**/*.{arxml,xml,nvmlayout.json,h,c,json,blk,engine.js,engine.cjs,engine.mjs}";
-/** Directories never worth walking. */
-const EXCLUDE_GLOB = "**/{node_modules,.git,out,dist,.vscode-test,build}/**";
+/** File name extensions worth indexing (config / source / descriptor). */
+const INDEX_EXTS = [".arxml", ".xml", ".json", ".h", ".c", ".blk"];
+/** Compound engine-script suffixes worth indexing (a bare `.js` is not). */
+const INDEX_SUFFIXES = [".engine.js", ".engine.cjs", ".engine.mjs"];
+/** Directory NAMES never worth walking (matched case-insensitively). */
+const EXCLUDE_DIRS = new Set(["node_modules", ".git", "out", "dist", ".vscode-test", "build"]);
 /** Safety cap so a huge tree can't hang discovery. */
 const MAX_RESULTS = 20000;
+/** Safety cap on recursion depth (guards pathological trees / symlink chains). */
+const MAX_DEPTH = 40;
+
+/** Whether a file base name is one we index. */
+function isIndexedFile(nameLower: string): boolean {
+	return (
+		INDEX_EXTS.some(e => nameLower.endsWith(e)) || INDEX_SUFFIXES.some(s => nameLower.endsWith(s))
+	);
+}
 
 export class DependencyResolver {
 	/** base name (lower) → absolute fsPaths found across the roots. */
@@ -63,30 +73,78 @@ export class DependencyResolver {
 		return out;
 	}
 
-	/** Build (once) the base-name → paths index across the configured roots. */
-	private async buildIndex(): Promise<Map<string, string[]>> {
-		if (this.index) {
+	/**
+	 * Build (once) the base-name → paths index across the configured roots.
+	 * Pass `force` to rebuild even when a cached index exists — used to pick up
+	 * files that appeared after the first build (e.g. build-generated folders such
+	 * as `_tmp/…`), which would otherwise stay invisible until a window reload.
+	 */
+	private async buildIndex(force = false): Promise<Map<string, string[]>> {
+		if (this.index && !force) {
 			return this.index;
 		}
 		const index = new Map<string, string[]>();
+		const counter = { n: 0 };
 		for (const root of this.resolvedRoots()) {
-			try {
-				const pattern = new vscode.RelativePattern(vscode.Uri.file(root), INDEX_GLOB);
-				const uris = await vscode.workspace.findFiles(pattern, EXCLUDE_GLOB, MAX_RESULTS);
-				for (const uri of uris) {
-					const base = uri.fsPath.replace(/^.*[\\/]/, "").toLowerCase();
-					const list = index.get(base) ?? [];
-					if (!list.includes(uri.fsPath)) {
-						list.push(uri.fsPath);
-					}
-					index.set(base, list);
-				}
-			} catch {
-				// A missing/invalid root is skipped rather than aborting discovery.
-			}
+			await this.walkRoot(root, index, counter);
 		}
 		this.index = index;
 		return index;
+	}
+
+	/**
+	 * Recursively index one root using `fs.readDirectory` (NOT `findFiles`), so
+	 * files ignored by `.gitignore` / `files.exclude` / `search.exclude` and
+	 * OS-hidden files are STILL discovered. Only the well-known noise directories
+	 * in {@link EXCLUDE_DIRS} are skipped. Bounded by {@link MAX_RESULTS} +
+	 * {@link MAX_DEPTH}; guards against symlink cycles via a visited set.
+	 */
+	private async walkRoot(
+		root: string,
+		index: Map<string, string[]>,
+		counter: { n: number },
+	): Promise<void> {
+		const seen = new Set<string>();
+		const stack: { dir: string; depth: number }[] = [{ dir: root, depth: 0 }];
+		while (stack.length > 0 && counter.n < MAX_RESULTS) {
+			const { dir, depth } = stack.pop()!;
+			if (depth > MAX_DEPTH) {
+				continue;
+			}
+			const key = dir.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+			if (seen.has(key)) {
+				continue;
+			}
+			seen.add(key);
+			let entries: [string, vscode.FileType][];
+			try {
+				entries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(dir));
+			} catch {
+				continue; // unreadable directory — skip, don't abort
+			}
+			for (const [name, type] of entries) {
+				if (counter.n >= MAX_RESULTS) {
+					break;
+				}
+				const child = vscode.Uri.joinPath(vscode.Uri.file(dir), name).fsPath;
+				if ((type & vscode.FileType.Directory) !== 0) {
+					if (EXCLUDE_DIRS.has(name.toLowerCase())) {
+						continue;
+					}
+					stack.push({ dir: child, depth: depth + 1 });
+				} else if ((type & vscode.FileType.File) !== 0) {
+					const lower = name.toLowerCase();
+					if (isIndexedFile(lower)) {
+						const list = index.get(lower) ?? [];
+						if (!list.includes(child)) {
+							list.push(child);
+							counter.n++;
+						}
+						index.set(lower, list);
+					}
+				}
+			}
+		}
 	}
 
 	/** True when the user configured at least one workspace root. */
@@ -120,9 +178,17 @@ export class DependencyResolver {
 			}
 		}
 
-		// 3) Index the roots and look up by base name.
+		// 3) Index the roots and look up by base name. On a miss, rebuild the index
+		// once and retry: the cached index is built at first use and only dropped on
+		// a settings change, so a file that was generated into a root AFTER that
+		// (e.g. build-generated `_tmp/st_generic_if/*.h`) would otherwise stay
+		// unresolvable until a manual window reload.
 		const index = await this.buildIndex();
-		const candidates = index.get(key) ?? [];
+		let candidates = index.get(key) ?? [];
+		if (candidates.length === 0) {
+			const fresh = await this.buildIndex(true);
+			candidates = fresh.get(key) ?? [];
+		}
 		if (candidates.length === 0) {
 			return undefined;
 		}

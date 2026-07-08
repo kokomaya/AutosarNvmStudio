@@ -382,6 +382,12 @@ export function buildFeeV3Blocks(
 				macLength,
 				rawSize,
 				stale: c.stale,
+				// Editor offset of this chunk's own next-link (tail) field, and the
+				// offset its back-link points at (the PREVIOUS version's tail). Used
+				// to pick the current version from the FEE back-link chain, not from
+				// physical position. Undefined when the chunk has no decodable tail.
+				tailOffset: hasTail ? nextLinkOffset : undefined,
+				nextLinkTargetOffset: c.nextLinkTargetOffset,
 			},
 			// Vendor-neutral projection for the editor's Blocks views. `sequence`
 			// is BEST-EFFORT: FEE stores no monotonic write counter, so we order by
@@ -408,25 +414,60 @@ export function buildFeeV3Blocks(
 		});
 	}
 
-	// Flag the current version of each logical block. The active sector's link
-	// table is authoritative: a non-stale chunk IS the current version. Historical
-	// (stale) chunks never win, even if physically later, so fall back to the
-	// highest write sequence only among non-stale instances.
+	// Flag the current version of each logical block from the FEE **back-link
+	// chain**, not physical position. Every chunk's next-link points at its
+	// PREVIOUS version's tail, so the newest instance is the one no sibling links
+	// back to (the head of the chain). Physical write sequence is only a
+	// last-resort tie-break when links are corrupted/broken or don't disambiguate.
+	const referencedAsPrevious = new Set<number>();
+	for (const b of blocks) {
+		const prev = (b.raw as { nextLinkTargetOffset?: number })?.nextLinkTargetOffset;
+		if (typeof prev === "number") {
+			referencedAsPrevious.add(prev);
+		}
+	}
+	const isChainHead = (b: NvmBlock): boolean => {
+		const tail = (b.raw as { tailOffset?: number })?.tailOffset;
+		return typeof tail === "number" && !referencedAsPrevious.has(tail);
+	};
 	const latestByIdentity = new Map<string, NvmBlock>();
 	for (const b of blocks) {
-		if (!b.identity || typeof b.sequence !== "number") {
+		if (!b.identity) {
 			continue;
 		}
 		if ((b.raw as { stale?: boolean })?.stale) {
-			continue; // stale copies are never the latest
+			continue; // stale copies are never the current version
 		}
 		const best = latestByIdentity.get(b.identity.key);
-		if (!best || (best.sequence ?? -Infinity) < b.sequence) {
+		if (!best) {
+			latestByIdentity.set(b.identity.key, b);
+			continue;
+		}
+		const bHead = isChainHead(b);
+		const bestHead = isChainHead(best);
+		if (bHead !== bestHead) {
+			// A chain head always beats a superseded (linked-back-to) instance.
+			if (bHead) {
+				latestByIdentity.set(b.identity.key, b);
+			}
+		} else if ((best.sequence ?? -Infinity) < (b.sequence ?? -Infinity)) {
+			// Same kind: fall back to the higher best-effort write sequence.
 			latestByIdentity.set(b.identity.key, b);
 		}
 	}
 	for (const b of latestByIdentity.values()) {
 		b.isLatest = true;
+	}
+
+	// Make the "State" column reflect the true current version: only the chain
+	// head reads `latest`; live-but-superseded copies read `superseded`; forward-
+	// scanned historical chunks read `stale`.
+	for (const b of blocks) {
+		const stale = (b.raw as { stale?: boolean })?.stale;
+		const stateAttr = b.attributes?.find(a => a.key === "state");
+		if (stateAttr) {
+			stateAttr.value = stale ? "stale" : b.isLatest ? "latest" : "superseded";
+		}
 	}
 
 	blocks.sort((a, b) => a.offset - b.offset);

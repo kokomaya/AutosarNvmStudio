@@ -51,6 +51,18 @@ export interface LayoutConfig {
 	 * manager to the pack's entry script. Same trust gate as `engineScript`.
 	 */
 	engine?: string;
+	/**
+	 * Optional **project-local pre-processing hook** — a workspace `.js` file
+	 * (relative to the descriptor / dump, e.g. `"./radar.hook.js"`) that runs
+	 * BEFORE the engine, under the exact same trust gate. It receives the same
+	 * input bundle (including the declared {@link sources}) and returns opaque
+	 * data the engine reads via `input.hookData`. This is the clean bridge for
+	 * "the plugin locates project files (via `sources`), a project-owned script
+	 * parses them (e.g. `build.yml`), and the shared engine consumes the result"
+	 * — the core stays vendor-blind and the shared engine stays project-blind.
+	 * See `src/nvm/layout/externalEngine.ts` (`loadExternalHook`).
+	 */
+	hookScript?: string;
 	/** Free-form options passed to the selected built-in `provider` (engine). */
 	options?: Record<string, unknown>;
 	/** Optional gating so a descriptor only applies to matching files. */
@@ -82,6 +94,14 @@ export interface LayoutConfig {
 	 * core vendor-agnostic — e.g. Vector declares `{ "feeLcfg": "Fee_Lcfg.c" }`.
 	 */
 	sources?: Record<string, string>;
+	/**
+	 * Logical source names (keys of {@link sources}) that are REQUIRED for this
+	 * descriptor's adapter/engine to parse correctly. When any of them fails to
+	 * resolve, the core logs it to the NVM Studio output channel and shows a
+	 * gentle, non-modal hint. Vendor-blind: the core only checks presence, never
+	 * what a file means. Names not listed here are treated as optional.
+	 */
+	requiredSources?: string[];
 	/**
 	 * Color style, config-driven: maps a field `kind` to any CSS color. Fields
 	 * without an explicit `color` inherit `palette[kind]`; anything still unset
@@ -150,6 +170,12 @@ export interface LayoutInput {
 	 * declared in `LayoutConfig.sources` (e.g. `sources.feeLcfg` = `Fee_Lcfg.c`).
 	 */
 	sources: Record<string, string>;
+	/**
+	 * Opaque result of the descriptor's optional project-local `hookScript`, run
+	 * by the core before the engine. The core never interprets it; the engine
+	 * (and only the engine) knows its shape. Undefined when no hook ran.
+	 */
+	hookData?: unknown;
 }
 
 export interface NvmLayoutProvider {
@@ -215,7 +241,13 @@ export function matchSpecificity(config: LayoutConfig): number {
 	}
 	let score = 0;
 	if (m.fileNameIncludes?.length) {
-		score += 2;
+		// Base weight for naming the file, plus a small bounded bonus for longer /
+		// more substrings so a narrowly-targeted project descriptor (e.g.
+		// "NVM_22.11_9") deterministically beats a broad one (e.g. "NVM_22")
+		// instead of relying on disk discovery order. The bonus stays < 1 so it
+		// only breaks ties within the same presence category.
+		const totalLen = m.fileNameIncludes.reduce((n, s) => n + s.length, 0);
+		score += 2 + Math.min(totalLen, 50) / 100;
 	}
 	if (m.ext?.length) {
 		score += 1;

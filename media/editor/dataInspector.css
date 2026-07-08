@@ -54,6 +54,82 @@
 	margin: 0 0 0.5rem 0;
 }
 
+/* Compact one-line block metadata (Offset / Length) — replaces a 4-row <dl>. */
+.nvmMeta {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px 16px;
+	margin: 0 0 0.4rem 0;
+	font-size: 0.9em;
+	font-family: var(--vscode-editor-font-family);
+}
+
+.nvmMetaKey {
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	font-size: 0.85em;
+	opacity: 0.6;
+	margin-right: 2px;
+	font-family: var(--vscode-font-family);
+}
+
+/* Compact byte-attribute explainer — replaces the old 8-row <dl>. */
+.nvmByteExplain {
+	padding: 0.4rem 0.5rem;
+}
+
+.nvmByteRow {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 8px;
+}
+
+.nvmByteName {
+	font-family: var(--vscode-editor-font-family);
+	color: var(--vscode-symbolIcon-variableForeground, inherit);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.nvmByteKind {
+	font-size: 0.8em;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	opacity: 0.6;
+	flex: 0 0 auto;
+}
+
+.nvmByteSub {
+	font-family: var(--vscode-editor-font-family);
+	font-size: 0.82em;
+	opacity: 0.75;
+	margin-top: 2px;
+	word-break: break-word;
+}
+
+.nvmByteVal {
+	color: var(--vscode-debugTokenExpression-number, inherit);
+	opacity: 1;
+}
+
+/* Inline link-styled jump button (no big block button). */
+.nvmLinkBtn {
+	margin-top: 4px;
+	padding: 0;
+	border: none;
+	background: none;
+	color: var(--vscode-textLink-foreground);
+	cursor: pointer;
+	font-size: 0.85em;
+}
+
+.nvmLinkBtn:hover {
+	text-decoration: underline;
+	color: var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground));
+}
+
 /* --- decoded business-value tree --- */
 .nvmDecoded {
 	margin: 0 0 0.6rem 0;
@@ -64,7 +140,7 @@
 	 * own scroll region so it never pushes the Tags section and byte inspector
 	 * below off-screen; the outer .dataInspectorWrap scrolls the rest.
 	 */
-	max-height: 50vh;
+	max-height: 60vh;
 	overflow-y: auto;
 	overflow-x: hidden;
 }

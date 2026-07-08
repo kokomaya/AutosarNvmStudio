@@ -86,6 +86,12 @@ export interface LayoutInput {
 	sources: Record<string, string>;
 	arxml?: string;
 	configs: unknown[];
+	/**
+	 * Opaque result of the descriptor's optional project-local `hookScript`
+	 * (parsed by the core, shape known only to the engine). Undefined when no
+	 * hook ran. Vendor-blind at the core boundary.
+	 */
+	hookData?: unknown;
 }
 
 /**

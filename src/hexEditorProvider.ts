@@ -50,7 +50,8 @@ import {
 	resolveNvmBlocks,
 	resolveSymbols,
 } from "./nvm/layout";
-import { invalidateExternalEngine, isNodeHost, loadExternalEngine } from "./nvm/layout/externalEngine";
+import { HookContext, HookResult, invalidateExternalEngine, isNodeHost, loadExternalEngine, loadExternalHook } from "./nvm/layout/externalEngine";
+import { getNvmLog } from "./nvm/nvmLog";
 import { ISearchRequest, LiteralSearchRequest, RegexSearchRequest } from "./searchRequest";
 import { flattenBuffers, getBaseName, getCorrectArrayBuffer, randomString } from "./util";
 
@@ -64,11 +65,30 @@ const defaultEditorSettings: Readonly<IEditorSettings> = {
 
 const editorSettingsKeys = Object.keys(defaultEditorSettings) as readonly (keyof IEditorSettings)[];
 
+/** One resolved (or missing) auxiliary source, for the load diagnostics log. */
+interface SourceReportEntry {
+	/** Logical name the descriptor declared (e.g. `feeLcfg`). */
+	logical: string;
+	/** The file name the descriptor asked for (e.g. `Fee_Lcfg.c`). */
+	file: string;
+	/** Whether the file was found + read. */
+	resolved: boolean;
+	/** Whether any descriptor flagged this logical name as required. */
+	required: boolean;
+}
+
 /** Result of NVM auto-detection, plus the engine script to watch for hot reload. */
 interface NvmLoadResult {
 	resolved: ResolvedLayout;
 	/** Set when an external engine produced the blocks; watched for hot reload. */
 	engineScriptUri?: vscode.Uri;
+	/**
+	 * Set when the matched descriptor declares a `hookScript` that has not yet run
+	 * for this document. The caller runs it in the BACKGROUND (so a slow hook —
+	 * e.g. a network download — never blocks the first render) and re-parses when
+	 * it finishes. Carries everything the background run needs.
+	 */
+	pendingHook?: { dir: string; config: LayoutConfig; input: LayoutInput };
 }
 
 export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocument> {
@@ -101,6 +121,16 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 		const reloadCmd = vscode.commands.registerCommand("nvmStudio.nvm.reloadLayout", () =>
 			provider.reloadActiveNvmLayout(),
 		);
+		// Status bar profile (suite) switcher: pick which descriptor drives the
+		// active dump, without cluttering the UI. Visible only for NVM dumps.
+		const selectProfileCmd = vscode.commands.registerCommand(
+			"nvmStudio.nvm.selectLayoutProfile",
+			() => provider.showLayoutProfilePicker(),
+		);
+		const activeWatch = registry.onDidChangeActiveDocument(() =>
+			provider.updateProfileStatusBar(),
+		);
+		provider.updateProfileStatusBar();
 		// When the discovery roots change, re-parse every open dump so newly found
 		// descriptors / source files take effect without a reopen.
 		const cfgWatch = vscode.workspace.onDidChangeConfiguration(e => {
@@ -112,7 +142,14 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 				void provider.reloadAllNvmLayouts();
 			}
 		});
-		return vscode.Disposable.from(editor, reloadCmd, cfgWatch);
+		return vscode.Disposable.from(
+			editor,
+			reloadCmd,
+			selectProfileCmd,
+			activeWatch,
+			new vscode.Disposable(() => provider._profileStatusBar?.dispose()),
+			cfgWatch,
+		);
 	}
 
 	private static readonly viewType = "hexEditor.hexedit";
@@ -138,6 +175,84 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 	 * watcher, and the descriptor/source/engine file watchers.
 	 */
 	private readonly _nvmReloaders = new Map<HexDocument, () => Promise<void>>();
+
+	/**
+	 * Per-document layout-hook state. The hook runs ONCE in the background per open
+	 * document; its result is cached here and merged into the input on the next
+	 * (and subsequent) parses so re-renders are instant and the hook is never
+	 * re-run on the render path.
+	 */
+	private readonly _hookState = new Map<
+		HexDocument,
+		{ running: boolean; applied: boolean; result?: HookResult }
+	>();
+
+	/** Status bar item showing / switching the active NVM layout profile (suite). */
+	private _profileStatusBar?: vscode.StatusBarItem;
+
+	/** Lazily create the layout-profile status bar item. */
+	private get profileStatusBar(): vscode.StatusBarItem {
+		if (!this._profileStatusBar) {
+			this._profileStatusBar = vscode.window.createStatusBarItem(
+				vscode.StatusBarAlignment.Right,
+				90,
+			);
+			this._profileStatusBar.command = "nvmStudio.nvm.selectLayoutProfile";
+		}
+		return this._profileStatusBar;
+	}
+
+	/**
+	 * Reflect the active dump + pinned profile in the status bar: visible only
+	 * while an NVM dump is the active editor; shows the pinned descriptor's name
+	 * or "Auto". Clicking opens the profile picker.
+	 */
+	public updateProfileStatusBar(): void {
+		const item = this.profileStatusBar;
+		if (!this._registry.activeDocument) {
+			item.hide();
+			return;
+		}
+		const active = this.getActiveLayoutProfile();
+		item.text = `$(list-tree) NVM: ${active ?? "Auto"}`;
+		item.tooltip = vscode.l10n.t("Switch the active NVM layout profile (suite)");
+		item.show();
+	}
+
+	/** Command: pick the active layout profile (suite) for the active dump. */
+	public async showLayoutProfilePicker(): Promise<void> {
+		const doc = this._registry.activeDocument;
+		if (!doc) {
+			void vscode.window.showInformationMessage(vscode.l10n.t("No active NVM dump."));
+			return;
+		}
+		const dir = doc.uri.fsPath.replace(/[\\/][^\\/]+$/, "");
+		const profiles = await this.listLayoutProfiles(dir);
+		const active = this.getActiveLayoutProfile();
+		type ProfileItem = vscode.QuickPickItem & { file?: string };
+		const items: ProfileItem[] = [
+			{
+				label: vscode.l10n.t("Auto (detect all)"),
+				description: active ? undefined : "$(check)",
+			},
+			...profiles.map(
+				(p): ProfileItem => ({
+					label: p.label,
+					description: p.file === active ? `${p.file} $(check)` : p.file,
+					file: p.file,
+				}),
+			),
+		];
+		const picked = await vscode.window.showQuickPick(items, {
+			title: vscode.l10n.t("Select NVM Layout Profile"),
+			placeHolder: vscode.l10n.t("Choose which descriptor drives this dump"),
+		});
+		if (!picked) {
+			return;
+		}
+		await this.setActiveLayoutProfile(picked.file);
+		this.updateProfileStatusBar();
+	}
 
 	async openCustomDocument(
 		uri: vscode.Uri,
@@ -295,6 +410,13 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 						});
 					}, 0);
 				}
+
+				// The layout is rendered. If a project hook is pending, run it in
+				// the BACKGROUND now — it re-parses + re-pushes when it completes, so
+				// a slow download never delays this first render.
+				if (result?.pendingHook) {
+					this.scheduleLayoutHook(document, result.pendingHook);
+				}
 				if (result && allBlocks.length > 0) {
 					console.debug(
 						`Auto-loaded NVM layout [${result.resolved.providerId}] ${fsPath} -> ${allBlocks.length} blocks` +
@@ -337,6 +459,7 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 		};
 		this._nvmReloaders.set(document, reload);
 		disposables.push(new vscode.Disposable(() => this._nvmReloaders.delete(document)));
+		disposables.push(new vscode.Disposable(() => this._hookState.delete(document)));
 
 		// Watch the descriptor + nearby declared-source files for edits.
 		this.wireLayoutWatchers(dir, reload, disposables);
@@ -447,15 +570,25 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 		const raw = await vscode.workspace.fs.readFile(document.uri);
 		const text = new TextDecoder("ascii").decode(raw);
 		const configs = await this.findLayoutConfigs(dir);
-		const [sources, arxml] = await Promise.all([
+		const [gathered, arxml] = await Promise.all([
 			this.gatherSources(dir, configs),
 			this.findArxml(dir),
 		]);
+		const { sources, report } = gathered;
+		this.logNvmLoad(fileName, dir, configs, report);
 		// Legacy bundle for the external-engine boundary (packs consume text + sources).
 		const input: LayoutInput = { fileName, ext, text, configs, sources, arxml };
 
+		// Merge any already-computed hook result (from a prior background run for
+		// this document) synchronously — this is fast (in-memory) and lets a re-parse
+		// render the full, hook-augmented layout without touching the network again.
+		const cachedHook = this._hookState.get(document)?.result;
+		if (cachedHook) {
+			this.applyHookResult(input, cachedHook);
+		}
+
 		// Prefer an external engine when a descriptor opts in and the gate passes.
-		const external = await this.tryExternalEngine(dir, input);
+		const external = await this.tryExternalEngine(document, dir, input);
 		if (external) {
 			return external;
 		}
@@ -495,6 +628,7 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 	 * confirmation. Any failure falls through to the built-ins.
 	 */
 	private async tryExternalEngine(
+		document: HexDocument,
 		dir: string,
 		input: LayoutInput,
 	): Promise<NvmLoadResult | undefined> {
@@ -575,6 +709,17 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 			return undefined;
 		}
 
+		// The optional project-local `hookScript` is NOT run here — it may be slow
+		// (e.g. a network download) and must never block the first render. If it has
+		// not yet run for this document, we hand it back as `pendingHook` so the
+		// caller runs it in the background and re-parses when it completes. Any result
+		// from a previous background run was already merged into `input` upstream.
+		const hookState = this._hookState.get(document);
+		const pendingHook =
+			config.hookScript && !hookState?.applied && !hookState?.running
+				? { dir, config, input }
+				: undefined;
+
 		try {
 			const stat = await vscode.workspace.fs.stat(scriptUri);
 			const engine = await loadExternalEngine(scriptUri.fsPath, stat.mtime);
@@ -585,12 +730,128 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 				// Only workspace-local scripts are watched for hot reload; installed
 				// packs are immutable until re-installed.
 				engineScriptUri: config.engine ? undefined : scriptUri,
+				pendingHook,
 			};
 		} catch (e) {
 			void vscode.window.showErrorMessage(
 				`Failed to run NVM ${label}: ${e instanceof Error ? e.message : String(e)}`,
 			);
 			return undefined;
+		}
+	}
+
+	/**
+	 * Kick off the descriptor's `hookScript` in the BACKGROUND (once per open
+	 * document). It never blocks the first render: the layout is already parsed
+	 * and pushed. When the hook finishes and produced data/sources, the document's
+	 * reload runs, which merges the cached result and re-renders with it.
+	 */
+	private scheduleLayoutHook(
+		document: HexDocument,
+		pending: { dir: string; config: LayoutConfig; input: LayoutInput },
+	): void {
+		const state = this._hookState.get(document) ?? { running: false, applied: false };
+		if (state.running || state.applied) {
+			return;
+		}
+		state.running = true;
+		this._hookState.set(document, state);
+
+		void (async () => {
+			let result: HookResult | undefined;
+			try {
+				result = await this.computeLayoutHook(pending.dir, pending.config, pending.input);
+			} finally {
+				const st = this._hookState.get(document);
+				if (st) {
+					st.running = false;
+					st.applied = true;
+					st.result = result;
+				}
+			}
+			// Only re-render when the hook actually contributed something and the
+			// document is still open.
+			const contributed =
+				!!result &&
+				((result.sources && Object.keys(result.sources).length > 0) ||
+					result.data !== undefined);
+			if (contributed && this._hookState.has(document)) {
+				await this._nvmReloaders.get(document)?.();
+			}
+		})();
+	}
+
+	/**
+	 * Run the descriptor's `hookScript` and return its result (data + extra
+	 * sources) WITHOUT mutating the input — the caller caches it per document.
+	 * The hook may be async, gets a private persistent cache dir + the descriptor
+	 * `options` + a log. Never throws — a missing/failing hook returns undefined.
+	 */
+	private async computeLayoutHook(
+		dir: string,
+		config: LayoutConfig,
+		input: LayoutInput,
+	): Promise<HookResult | undefined> {
+		if (!config.hookScript) {
+			return undefined;
+		}
+		const log = getNvmLog();
+		const hookUri = await this.findNearbyFileUri(dir, config.hookScript);
+		if (!hookUri) {
+			log.warn(`  Hook script "${config.hookScript}" not found near ${dir}`);
+			return undefined;
+		}
+		if (!(await this.confirmEngineScript(hookUri))) {
+			log.info(`  Hook script "${config.hookScript}" not approved; skipping.`);
+			return undefined;
+		}
+		try {
+			const stat = await vscode.workspace.fs.stat(hookUri);
+			const hook = await loadExternalHook(hookUri.fsPath, stat.mtime);
+
+			// A persistent, hook-private cache directory (survives reloads) so the
+			// hook can implement its own versioned retention.
+			const storageUri = vscode.Uri.joinPath(
+				this._context.globalStorageUri,
+				"nvm-hooks",
+				hook.id.replace(/[^\w.-]+/g, "_"),
+			);
+			await vscode.workspace.fs.createDirectory(storageUri);
+
+			const ctx: HookContext = {
+				storageDir: storageUri.fsPath,
+				options: config.options,
+				log: (m: string) => log.info(`  [hook:${hook.id}] ${m}`),
+			};
+			const raw = await hook.run(input, ctx);
+
+			// Normalize to a HookResult: a plain value is treated as opaque data.
+			const result: HookResult =
+				raw && typeof raw === "object" && ("data" in raw || "sources" in raw)
+					? (raw as HookResult)
+					: { data: raw };
+			const nSources = result.sources ? Object.keys(result.sources).length : 0;
+			log.info(`  Hook OK: ${hook.id} (${config.hookScript})` + (nSources ? ` (+${nSources} source[s])` : ""));
+			return result;
+		} catch (e) {
+			log.warn(
+				`  Hook "${config.hookScript}" failed: ${e instanceof Error ? e.message : String(e)}`,
+			);
+			return undefined;
+		}
+	}
+
+	/** Merge a cached {@link HookResult} into an input bundle (sources + data). */
+	private applyHookResult(input: LayoutInput, result: HookResult): void {
+		if (result.data !== undefined) {
+			input.hookData = result.data;
+		}
+		if (result.sources) {
+			for (const [k, v] of Object.entries(result.sources)) {
+				if (typeof v === "string") {
+					input.sources[k] = v;
+				}
+			}
 		}
 	}
 
@@ -687,12 +948,29 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 	 * every dump.
 	 */
 	private async findLayoutConfigs(dir: string): Promise<LayoutConfig[]> {
+		const discovered = await this.discoverLayoutConfigs(dir);
+		const active = this.getActiveLayoutProfile();
+		// When the user pinned a specific profile (descriptor file) and it exists
+		// among the discovered ones, use ONLY that. Otherwise auto-detect (all).
+		if (active && discovered.some(d => d.file === active)) {
+			return discovered.filter(d => d.file === active).map(d => d.config);
+		}
+		return discovered.map(d => d.config);
+	}
+
+	/**
+	 * Discover every layout descriptor near the dump, each tagged with the base
+	 * file name it came from (for the profile switcher). No profile filtering.
+	 */
+	private async discoverLayoutConfigs(
+		dir: string,
+	): Promise<{ file: string; config: LayoutConfig }[]> {
 		const parent = dir.replace(/[\\/][^\\/]+$/, "");
 		const searchDirs = [dir, `${dir}/conf`, `${parent}/conf`];
 		for (const root of configuredLayoutRoots()) {
 			searchDirs.push(root, `${root}/conf`);
 		}
-		const configs: LayoutConfig[] = [];
+		const out: { file: string; config: LayoutConfig }[] = [];
 		for (const d of searchDirs) {
 			try {
 				const entries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(d));
@@ -712,7 +990,7 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 									typeof c.engineScript === "string" ||
 									typeof c.engine === "string")
 							) {
-								configs.push(c as LayoutConfig);
+								out.push({ file: name, config: c as LayoutConfig });
 							}
 						}
 					} catch (e) {
@@ -723,7 +1001,36 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 				// directory does not exist; keep searching
 			}
 		}
-		return configs;
+		return out;
+	}
+
+	/**
+	 * List the distinct descriptor files discoverable for a dump directory, for
+	 * the profile QuickPick. Each entry is a base file name + a display label
+	 * (the descriptor's vendor, when present).
+	 */
+	public async listLayoutProfiles(
+		dir: string,
+	): Promise<{ file: string; label: string }[]> {
+		const discovered = await this.discoverLayoutConfigs(dir);
+		const byFile = new Map<string, string>();
+		for (const { file, config } of discovered) {
+			if (!byFile.has(file)) {
+				byFile.set(file, config.vendor ?? file);
+			}
+		}
+		return [...byFile].map(([file, label]) => ({ file, label }));
+	}
+
+	/** The workspace-scoped active layout profile (descriptor base file name). */
+	private getActiveLayoutProfile(): string | undefined {
+		return this._context.workspaceState.get<string>("nvmstudio.nvm.activeLayoutProfile") || undefined;
+	}
+
+	/** Pin (or clear with `undefined`) the active layout profile, then reload. */
+	public async setActiveLayoutProfile(file: string | undefined): Promise<void> {
+		await this._context.workspaceState.update("nvmstudio.nvm.activeLayoutProfile", file ?? "");
+		await this.reloadAllNvmLayouts();
 	}
 
 	/**
@@ -762,33 +1069,120 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 	}
 
 	/**
+	 * Emit human-readable load diagnostics to the NVM Studio output channel and,
+	 * when a *required* declared source is missing, a single gentle non-modal
+	 * hint. Vendor-blind: reports only the generic descriptor/source resolution.
+	 */
+	private logNvmLoad(
+		fileName: string,
+		dir: string,
+		configs: LayoutConfig[],
+		report: SourceReportEntry[],
+	): void {
+		const log = getNvmLog();
+		log.info(`Loading NVM layout for ${fileName} (in ${dir})`);
+
+		if (configs.length === 0) {
+			log.info(
+				"  No *.nvmlayout.json descriptor matched; rendering as plain hex. " +
+					"Add a descriptor near the dump, in ./conf, ../conf, or a configured layoutRoot.",
+			);
+			return;
+		}
+		for (const c of configs) {
+			const via = c.engine
+				? `engine "${c.engine}"`
+				: c.engineScript
+					? `engineScript "${c.engineScript}"`
+					: c.provider
+						? `provider "${c.provider}"`
+						: c.profile
+							? "structured profile"
+							: "positional blocks";
+			log.info(`  Descriptor: ${c.vendor ?? "(unnamed)"} via ${via}`);
+		}
+
+		if (report.length === 0) {
+			log.info("  No auxiliary source files declared.");
+		} else {
+			for (const r of report) {
+				const tag = r.required ? "required" : "optional";
+				if (r.resolved) {
+					log.info(`  Source OK   [${tag}] ${r.logical} -> ${r.file}`);
+				} else if (r.required) {
+					log.warn(`  Source MISSING [${tag}] ${r.logical} -> ${r.file} (not found)`);
+				} else {
+					log.info(`  Source missing [${tag}] ${r.logical} -> ${r.file} (not found)`);
+				}
+			}
+		}
+
+		const missingRequired = report.filter(r => r.required && !r.resolved);
+		if (missingRequired.length > 0) {
+			const names = missingRequired.map(r => r.file).join(", ");
+			void vscode.window
+				.showWarningMessage(
+					vscode.l10n.t(
+						"NVM Studio: required source file(s) not found: {0}. Parsing may be incomplete.",
+						names,
+					),
+					vscode.l10n.t("Show Log"),
+				)
+				.then(action => {
+					if (action) {
+						log.show(true);
+					}
+				});
+		}
+	}
+
+	/**
 	 * Resolve the auxiliary source files that the loaded descriptors declare via
 	 * `sources: { logicalName: fileName }`. The core stays vendor-agnostic — it
 	 * only reads what the config asks for and keys the content by logical name.
+	 *
+	 * Returns both the resolved content map and a per-source `report` (declared
+	 * file, whether it resolved, and whether any descriptor marked it required)
+	 * so the caller can surface load diagnostics.
 	 */
 	private async gatherSources(
 		dir: string,
 		configs: LayoutConfig[],
-	): Promise<Record<string, string>> {
+	): Promise<{ sources: Record<string, string>; report: SourceReportEntry[] }> {
 		// logical name -> file name (later descriptors win on conflict)
 		const wanted = new Map<string, string>();
+		// logical names any descriptor flagged as required.
+		const required = new Set<string>();
 		for (const c of configs) {
 			for (const [logical, file] of Object.entries(c.sources ?? {})) {
 				if (typeof file === "string" && file) {
 					wanted.set(logical, file);
 				}
 			}
+			for (const logical of c.requiredSources ?? []) {
+				if (typeof logical === "string" && logical) {
+					required.add(logical);
+				}
+			}
 		}
 		const out: Record<string, string> = {};
+		const report: SourceReportEntry[] = [];
 		await Promise.all(
 			[...wanted].map(async ([logical, file]) => {
 				const content = await this.readNearbyFile(dir, file);
 				if (content !== undefined) {
 					out[logical] = content;
 				}
+				report.push({
+					logical,
+					file,
+					resolved: content !== undefined,
+					required: required.has(logical),
+				});
 			}),
 		);
-		return out;
+		report.sort((a, b) => a.logical.localeCompare(b.logical));
+		return { sources: out, report };
 	}
 
 	/** Read the nearest AUTOSAR config (`*.arxml`/`*.xml`) content, if any. */

@@ -83,17 +83,18 @@
 	color: var(--vscode-editor-selectionForeground);
 	/*
 	 * NVM block backgrounds are applied as an inline `style` on the cell, which
-	 * always beats a class-based `background`. Paint the selection as an inset
-	 * outline (a separate property inline styles can't override) so the selection
-	 * stays visible even inside a rendered block. Mirrors `.data-cell-replace`.
+	 * always beats a class-based `background`. Fill the WHOLE cell with the
+	 * selection color via a large inset shadow (a property inline styles can't
+	 * override) so selection reads as one continuous flat highlight — like the
+	 * native editor — instead of a boxed 2px outline around each byte.
 	 */
-	box-shadow: inset 0 0 0 2px var(--vscode-editor-selectionBackground);
+	box-shadow: inset 0 0 0 100px var(--vscode-editor-selectionBackground);
 }
 
 .data-cell-selected-hovered {
 	background: var(--vscode-editor-inactiveSelectionBackground);
 	color: inherit;
-	box-shadow: inset 0 0 0 2px var(--vscode-editor-inactiveSelectionBackground);
+	box-shadow: inset 0 0 0 100px var(--vscode-editor-inactiveSelectionBackground);
 }
 
 .data-cell-unsaved {
@@ -215,6 +216,13 @@
 .nvmTooltip {
 	padding: 6px 8px;
 	min-width: 180px;
+	/*
+	 * Let mouse events pass THROUGH the popover to the bytes underneath, so the
+	 * user can click / drag-select data covered by the tooltip without first
+	 * moving the pointer away. The interactive action buttons re-enable pointer
+	 * events for themselves (see .nvmTooltipActions).
+	 */
+	pointer-events: none;
 }
 .nvmTooltipContent {
 	display: flex;
@@ -237,6 +245,8 @@
 	gap: 4px;
 	justify-content: flex-start;
 	flex-wrap: wrap;
+	/* Re-enable interaction for the buttons (the popover itself is click-through). */
+	pointer-events: auto;
 }
 
 /* VS Code-styled action buttons inside the NVM tooltip. */
