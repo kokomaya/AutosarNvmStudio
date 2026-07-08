@@ -14,6 +14,7 @@
 
 import { FieldLinkSpec, NvmProfile, SymbolTable } from "../../../shared/nvm";
 import { NvmBlockInfo } from "../../../shared/protocol";
+import { DiscoveryExclude } from "../discovery/fileIndex";
 import { FileRef, ResolveContext } from "./context";
 
 /** A vendor layout descriptor, typically loaded from a `*.nvmlayout.json`. */
@@ -102,6 +103,18 @@ export interface LayoutConfig {
 	 * what a file means. Names not listed here are treated as optional.
 	 */
 	requiredSources?: string[];
+	/**
+	 * Discovery filters for resolving this descriptor's declared files
+	 * ({@link sources}, {@link engineScript}, {@link hookScript}) across the
+	 * configured `nvmstudio.nvm.workspaceRoots`. When a base name matches several
+	 * files under the roots, candidates whose absolute path matches any of these
+	 * rules are dropped BEFORE the disambiguation prompt — so obvious wrong hits
+	 * (backup trees, generated copies, archived variants) never even ask.
+	 * Vendor-blind: pure path/name string matching, never file contents. Does not
+	 * affect the fast flat scan (dump dir / `./conf` / `../conf`), which is already
+	 * unambiguous.
+	 */
+	discovery?: DiscoveryExclude;
 	/**
 	 * Color style, config-driven: maps a field `kind` to any CSS color. Fields
 	 * without an explicit `color` inherit `palette[kind]`; anything still unset

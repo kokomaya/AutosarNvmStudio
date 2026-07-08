@@ -45,6 +45,10 @@
     "ext": [".mot", ".s19"],                //   file extensions WITH the dot
     "fileNameIncludes": []                  //   case-insensitive name substrings (e.g. ["nvm"])
   },
+  "discovery": {                            // OPTIONAL. Prune wrong hits when a declared source name is
+    "excludePathIncludes": ["/backup/"],    //   ambiguous across nvmstudio.nvm.workspaceRoots: drop any
+    "excludeSuffixes": [".bak.c"]           //   candidate whose path contains a substring / ends with a
+  },                                        //   suffix, BEFORE prompting. Recursive-root search only.
   "palette": {                              // OPTIONAL. Style lives in config: kind -> any CSS color.
     "counter": "hsl(0 75% 80%)",            //   a kind with no entry (and no per-field "color")
     "payload": "hsl(140 55% 82%)"           //   gets a deterministic auto color instead.

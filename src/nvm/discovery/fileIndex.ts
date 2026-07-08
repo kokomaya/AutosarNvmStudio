@@ -37,6 +37,54 @@ function isIndexedFile(nameLower: string): boolean {
 	);
 }
 
+/**
+ * Path-based discovery filter declared by a layout descriptor (`discovery`).
+ * Applied to workspace-root candidates before disambiguation so obvious wrong
+ * hits never prompt. Vendor-blind: it matches only path/name strings.
+ */
+export interface DiscoveryExclude {
+	/** Drop candidates whose (lower-cased) absolute path contains any of these substrings. */
+	excludePathIncludes?: string[];
+	/** Drop candidates whose (lower-cased) file name ends with any of these suffixes. */
+	excludeSuffixes?: string[];
+}
+
+/** True when a candidate path should be dropped per the descriptor's exclude rules. */
+export function isExcludedPath(fsPath: string, exclude?: DiscoveryExclude): boolean {
+	if (!exclude) {
+		return false;
+	}
+	const p = fsPath.replace(/\\/g, "/").toLowerCase();
+	const base = p.replace(/^.*\//, "");
+	if (exclude.excludePathIncludes?.some(s => s && p.includes(s.toLowerCase()))) {
+		return true;
+	}
+	if (exclude.excludeSuffixes?.some(s => s && base.endsWith(s.toLowerCase()))) {
+		return true;
+	}
+	return false;
+}
+
+/** Merge the `discovery` excludes of several descriptors into one filter (or undefined). */
+export function aggregateDiscoveryExclude(
+	configs: { discovery?: DiscoveryExclude }[],
+): DiscoveryExclude | undefined {
+	const excludePathIncludes: string[] = [];
+	const excludeSuffixes: string[] = [];
+	for (const c of configs) {
+		if (c.discovery?.excludePathIncludes) {
+			excludePathIncludes.push(...c.discovery.excludePathIncludes);
+		}
+		if (c.discovery?.excludeSuffixes) {
+			excludeSuffixes.push(...c.discovery.excludeSuffixes);
+		}
+	}
+	if (excludePathIncludes.length === 0 && excludeSuffixes.length === 0) {
+		return undefined;
+	}
+	return { excludePathIncludes, excludeSuffixes };
+}
+
 export class DependencyResolver {
 	/** base name (lower) → absolute fsPaths found across the roots. */
 	private index: Map<string, string[]> | undefined;
@@ -157,20 +205,26 @@ export class DependencyResolver {
 	 * prompting to disambiguate duplicates, and persisting the pick. Returns the
 	 * absolute fsPath, or undefined if not found / the prompt was dismissed.
 	 */
-	public async resolve(fileName: string): Promise<string | undefined> {
+	public async resolve(fileName: string, exclude?: DiscoveryExclude): Promise<string | undefined> {
 		const base = fileName.replace(/^.*[\\/]/, "");
 		const key = base.toLowerCase();
 
-		// 1) A remembered machine-local absolute path that still exists wins.
+		// 1) A remembered machine-local absolute path that still exists wins — unless
+		// it now matches an exclude rule (e.g. the descriptor started excluding the
+		// tree it was picked from), in which case fall through and re-resolve.
 		const remembered = this.store.get(base);
-		if (remembered?.absPath && (await exists(remembered.absPath))) {
+		if (
+			remembered?.absPath &&
+			!isExcludedPath(remembered.absPath, exclude) &&
+			(await exists(remembered.absPath))
+		) {
 			return remembered.absPath;
 		}
 		// 2) A remembered portable relative path re-resolved under a current root.
 		if (remembered?.relPath) {
 			for (const root of this.resolvedRoots()) {
 				const abs = joinPath(root, remembered.relPath);
-				if (await exists(abs)) {
+				if (!isExcludedPath(abs, exclude) && (await exists(abs))) {
 					// Refresh the machine-local cache for next time.
 					await this.store.set(base, abs, { relPath: remembered.relPath, root });
 					return abs;
@@ -182,12 +236,13 @@ export class DependencyResolver {
 		// once and retry: the cached index is built at first use and only dropped on
 		// a settings change, so a file that was generated into a root AFTER that
 		// (e.g. build-generated `_tmp/st_generic_if/*.h`) would otherwise stay
-		// unresolvable until a manual window reload.
+		// unresolvable until a manual window reload. Candidates matching the
+		// descriptor's `discovery` excludes are dropped before disambiguation.
 		const index = await this.buildIndex();
-		let candidates = index.get(key) ?? [];
+		let candidates = (index.get(key) ?? []).filter(c => !isExcludedPath(c, exclude));
 		if (candidates.length === 0) {
 			const fresh = await this.buildIndex(true);
-			candidates = fresh.get(key) ?? [];
+			candidates = (fresh.get(key) ?? []).filter(c => !isExcludedPath(c, exclude));
 		}
 		if (candidates.length === 0) {
 			return undefined;

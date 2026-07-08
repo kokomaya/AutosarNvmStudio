@@ -33,7 +33,9 @@ import { AnnotationService } from "./nvm/annotations/annotationService";
 import { addBlockToCustomView } from "./nvm/customViews/addToView";
 import { CustomViewService } from "./nvm/customViews/customViewService";
 import {
+	aggregateDiscoveryExclude,
 	configuredLayoutRoots,
+	DiscoveryExclude,
 	getDependencyResolver,
 	invalidateDependencyResolver,
 } from "./nvm/discovery/fileIndex";
@@ -113,6 +115,15 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 			provider,
 			{
 				supportsMultipleEditorsPerDocument: false,
+				// Keep the webview (and all in-webview NVM state: parsed blocks, the
+				// selected block, decoded-tree expansion, scroll position) alive when the
+				// tab is hidden. Without this the webview is torn down on every tab
+				// switch and reloaded on return — which re-fetches the dump and drops the
+				// rendered NVM blocks/coloring until the extension re-pushes them. For a
+				// hex dump that reload is both jarring and lossy, so we retain instead.
+				webviewOptions: {
+					retainContextWhenHidden: true,
+				},
 			},
 		);
 		// Manual "reparse the active dump" command — for when a layout descriptor,
@@ -697,7 +708,11 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 			scriptUri = installed.entryUri;
 			label = `engine pack "${installed.manifest.id}"`;
 		} else {
-			scriptUri = await this.findNearbyFileUri(dir, config.engineScript!);
+			scriptUri = await this.findNearbyFileUri(
+				dir,
+				config.engineScript!,
+				aggregateDiscoveryExclude(input.configs),
+			);
 			if (!scriptUri) {
 				console.warn(`NVM engineScript "${config.engineScript}" not found near ${dir}`);
 				return undefined;
@@ -796,7 +811,11 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 			return undefined;
 		}
 		const log = getNvmLog();
-		const hookUri = await this.findNearbyFileUri(dir, config.hookScript);
+		const hookUri = await this.findNearbyFileUri(
+			dir,
+			config.hookScript,
+			aggregateDiscoveryExclude(input.configs),
+		);
 		if (!hookUri) {
 			log.warn(`  Hook script "${config.hookScript}" not found near ${dir}`);
 			return undefined;
@@ -904,6 +923,7 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 	private async findNearbyFileUri(
 		dir: string,
 		fileName: string,
+		exclude?: DiscoveryExclude,
 	): Promise<vscode.Uri | undefined> {
 		const base = fileName.replace(/^.*[\\/]/, "").toLowerCase();
 		const parent = dir.replace(/[\\/][^\\/]+$/, "");
@@ -920,7 +940,7 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 			}
 		}
 		// Fallback: recursively discover under the user's configured workspace roots.
-		const abs = await this.resolveViaRoots(fileName);
+		const abs = await this.resolveViaRoots(fileName, exclude);
 		return abs ? vscode.Uri.file(abs) : undefined;
 	}
 
@@ -931,12 +951,15 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 	 * when no roots are configured or the file is not found — keeping the flat
 	 * three-dir scan as the fast, zero-config default.
 	 */
-	private async resolveViaRoots(fileName: string): Promise<string | undefined> {
+	private async resolveViaRoots(
+		fileName: string,
+		exclude?: DiscoveryExclude,
+	): Promise<string | undefined> {
 		const resolver = getDependencyResolver(this._context);
 		if (!resolver.hasRoots()) {
 			return undefined;
 		}
-		return resolver.resolve(fileName);
+		return resolver.resolve(fileName, exclude);
 	}
 
 	/**
@@ -1037,7 +1060,11 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 	 * Read a file by name near the opened binary (its directory, `./conf/`,
 	 * `../conf/`). Vendor-agnostic; case-insensitive match on the base name.
 	 */
-	private async readNearbyFile(dir: string, fileName: string): Promise<string | undefined> {
+	private async readNearbyFile(
+		dir: string,
+		fileName: string,
+		exclude?: DiscoveryExclude,
+	): Promise<string | undefined> {
 		const parent = dir.replace(/[\\/][^\\/]+$/, "");
 		const searchDirs = [dir, `${dir}/conf`, `${parent}/conf`];
 		const target = fileName.toLowerCase();
@@ -1056,7 +1083,7 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 			}
 		}
 		// Fallback: recursively discover under the user's configured workspace roots.
-		const abs = await this.resolveViaRoots(fileName);
+		const abs = await this.resolveViaRoots(fileName, exclude);
 		if (abs) {
 			try {
 				const buf = await vscode.workspace.fs.readFile(vscode.Uri.file(abs));
@@ -1165,11 +1192,12 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 				}
 			}
 		}
+		const exclude = aggregateDiscoveryExclude(configs);
 		const out: Record<string, string> = {};
 		const report: SourceReportEntry[] = [];
 		await Promise.all(
 			[...wanted].map(async ([logical, file]) => {
-				const content = await this.readNearbyFile(dir, file);
+				const content = await this.readNearbyFile(dir, file, exclude);
 				if (content !== undefined) {
 					out[logical] = content;
 				}

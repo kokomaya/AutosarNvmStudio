@@ -10,7 +10,12 @@
     "safeSecTypes": "FS_SafeSection_Types.h",
     "demLcfg": "Dem_Lcfg.h"
   },
-  "match": { "ext": [".mot", ".srec", ".s19", ".s28", ".s37", ".hex"], "fileNameIncludes": ["NVM_22"] },
+  "match": { "ext": [".mot", ".srec", ".s19", ".s28", ".s37", ".hex"], "fileNameIncludes": [] },
+  "discovery": {
+    "_comment": "Optional. When a declared source (e.g. Fee_Lcfg.c) is resolved across the configured nvmstudio.nvm.workspaceRoots and several files share the base name, drop obvious wrong hits BEFORE the disambiguation prompt. Path/name string matching only; case-insensitive. Only affects the recursive workspace-root search, not the flat dump/./conf/../conf scan.",
+    "excludePathIncludes": ["/backup/", "/archive/", "_deprecated", "/.history/", "/generated_old/"],
+    "excludeSuffixes": [".bak.c", ".orig.h", ".old.c"]
+  },
   "options": {
     "alignment": 8,
     "numberOfSectors": 2,
