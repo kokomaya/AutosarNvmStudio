@@ -148,7 +148,7 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 			if (
 				e.affectsConfiguration("nvmstudio.nvm.workspaceRoots") ||
 				e.affectsConfiguration("nvmstudio.nvm.layoutRoots") ||
-				e.affectsConfiguration("hexeditor.nvm.workspaceRoots")
+				e.affectsConfiguration("nvmstudio.nvm.workspaceRoots")
 			) {
 				void provider.reloadAllNvmLayouts();
 			}
@@ -163,7 +163,7 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 		);
 	}
 
-	private static readonly viewType = "hexEditor.hexedit";
+	private static readonly viewType = "nvmStudio.hexedit";
 
 	constructor(
 		private readonly _context: vscode.ExtensionContext,
@@ -635,7 +635,7 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 	 * If a matching descriptor declares an `engine` (installed pack) or an
 	 * `engineScript` (workspace-local file), resolve and run it — but only when
 	 * every safety condition holds: a Node desktop host, a trusted workspace, the
-	 * `hexeditor.nvm.allowExternalEngines` setting, and a one-time per-file
+	 * `nvmstudio.nvm.allowExternalEngines` setting, and a one-time per-file
 	 * confirmation. Any failure falls through to the built-ins.
 	 */
 	private async tryExternalEngine(
@@ -901,7 +901,7 @@ export class HexEditorProvider implements vscode.CustomEditorProvider<HexDocumen
 	 * The approval is remembered per absolute path in workspace state.
 	 */
 	private async confirmEngineScript(scriptUri: vscode.Uri): Promise<boolean> {
-		const key = "hexeditor.nvm.approvedEngines";
+		const key = "nvmstudio.nvm.approvedEngines";
 		const approved = this._context.workspaceState.get<string[]>(key, []);
 		if (approved.includes(scriptUri.fsPath)) {
 			return true;

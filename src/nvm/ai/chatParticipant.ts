@@ -62,7 +62,7 @@ const SYSTEM_PROMPT =
 
 /**
  * Register the `@nvm` chat participant (when the API exists) plus the
- * `hexEditor.nvm.openChat` command that opens Copilot Chat prefilled for NVM.
+ * `nvmStudio.nvm.openChat` command that opens Copilot Chat prefilled for NVM.
  */
 export function registerChatParticipant(caps: NvmCapabilities): vscode.Disposable[] {
 	const disposables: vscode.Disposable[] = [];
@@ -112,7 +112,7 @@ export function registerChatParticipant(caps: NvmCapabilities): vscode.Disposabl
 		};
 
 		try {
-			disposables.push(chat.createChatParticipant("hexEditor.nvm", handler as never));
+			disposables.push(chat.createChatParticipant("nvmStudio.nvm", handler as never));
 		} catch (e) {
 			console.warn("NVM chat participant registration failed:", e);
 		}

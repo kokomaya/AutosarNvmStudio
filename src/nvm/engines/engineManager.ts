@@ -11,7 +11,7 @@
  * pack's entry script, which the (gated) loader then runs.
  *
  * Installing / running workspace or downloaded JavaScript is code execution and
- * stays gated by Workspace Trust + `hexeditor.nvm.allowExternalEngines` + a
+ * stays gated by Workspace Trust + `nvmstudio.nvm.allowExternalEngines` + a
  * per-file confirmation (enforced in `hexEditorProvider.ts`).
  */
 

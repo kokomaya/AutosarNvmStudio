@@ -5,7 +5,7 @@
  * Storage backend abstraction for annotations. Two implementations exist:
  * {@link SidecarStore} (default — portable files next to the dump) and
  * {@link WorkspaceStateStore}. The active backend is chosen by the
- * `hexeditor.nvm.annotationStorage` setting.
+ * `nvmstudio.nvm.annotationStorage` setting.
  */
 
 import * as vscode from "vscode";

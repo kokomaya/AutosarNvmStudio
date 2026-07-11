@@ -16,7 +16,7 @@
  * ```
  *
  * Loading executes workspace JavaScript, so callers MUST gate this behind
- * Workspace Trust + the `hexeditor.nvm.allowExternalEngines` setting + a
+ * Workspace Trust + the `nvmstudio.nvm.allowExternalEngines` setting + a
  * per-file confirmation (see `hexEditorProvider.ts`). This module never runs in
  * the web build: it is only reached from a code path guarded by
  * {@link isNodeHost}.

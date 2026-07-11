@@ -1,7 +1,7 @@
 // Template NVM layout engine — copy, rename to `<something>.engine.js`, edit.
 //
 // An engine turns an opened dump into colored NVM blocks. Enable runtime engines
-// with the setting `hexeditor.nvm.allowExternalEngines` (trusted workspace,
+// with the setting `nvmstudio.nvm.allowExternalEngines` (trusted workspace,
 // desktop only), then reference this file from a `*.nvmlayout.json`:
 //
 //   {

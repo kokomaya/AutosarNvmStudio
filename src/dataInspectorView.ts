@@ -8,7 +8,7 @@ import { HexEditorRegistry } from "./hexEditorRegistry";
 import { randomString } from "./util";
 
 export class DataInspectorView extends Disposable implements vscode.WebviewViewProvider {
-	public static readonly viewType = "hexEditor.dataInspectorView";
+	public static readonly viewType = "nvmStudio.dataInspectorView";
 	private _view?: vscode.WebviewView;
 	private _lastMessage: unknown;
 
@@ -22,7 +22,7 @@ export class DataInspectorView extends Disposable implements vscode.WebviewViewP
 				const inspectorType = vscode.workspace.getConfiguration("nvmstudio").get("inspectorType");
 				const shouldShow = inspectorType === InspectorLocation.Sidebar && !!doc;
 
-				vscode.commands.executeCommand("setContext", "hexEditor:showSidebarInspector", shouldShow);
+				vscode.commands.executeCommand("setContext", "nvmStudio:showSidebarInspector", shouldShow);
 				if (shouldShow) {
 					this.show({ autoReveal: true });
 				}

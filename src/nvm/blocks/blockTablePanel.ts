@@ -47,7 +47,7 @@ function randomNonce(): string {
 }
 
 export class NvmBlocksTablePanel extends Disposable implements vscode.WebviewViewProvider {
-	public static readonly viewType = "hexEditor.nvmBlocksTable";
+	public static readonly viewType = "nvmStudio.nvmBlocksTable";
 	private view?: vscode.WebviewView;
 
 	constructor(

@@ -39,7 +39,7 @@ function randomNonce(): string {
 }
 
 export class NvmCustomViewsPanel extends Disposable implements vscode.WebviewViewProvider {
-	public static readonly viewType = "hexEditor.nvmCustomViews";
+	public static readonly viewType = "nvmStudio.nvmCustomViews";
 	private view?: vscode.WebviewView;
 	/** Remembered active view id per dump, so re-pushes keep the selection. */
 	private readonly activeByDoc = new Map<string, string>();

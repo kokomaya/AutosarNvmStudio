@@ -76,7 +76,10 @@ async function resolveEngineScriptFile(id, version) {
 
 async function readJson(filePath) {
 	const raw = await fsp.readFile(filePath, "utf8");
-	return JSON.parse(raw);
+	// Strip a leading UTF-8 BOM (﻿). PowerShell 5.1 `Set-Content -Encoding UTF8`
+	// prepends one; JSON.parse rejects it, which would silently drop the engine from
+	// listEngines() (its version parse is caught) and make /v1/engines return [].
+	return JSON.parse(raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw);
 }
 
 async function writeJson(filePath, value) {

@@ -310,7 +310,7 @@ export function configuredRoots(): string[] {
 		return next;
 	}
 	// Backward compatibility with the previous setting id.
-	return cfg.get<string[]>("hexeditor.nvm.workspaceRoots", []) ?? [];
+	return cfg.get<string[]>("nvmstudio.nvm.workspaceRoots", []) ?? [];
 }
 
 /** Expand `${workspaceFolder}` / `${workspaceFolder:Name}` in a configured path. */

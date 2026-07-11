@@ -52,7 +52,7 @@ function reopenWithHexEditor() {
 		uri: vscode.Uri | undefined;
 	};
 	if (activeTabInput.uri) {
-		vscode.commands.executeCommand("vscode.openWith", activeTabInput.uri, "hexEditor.hexedit");
+		vscode.commands.executeCommand("vscode.openWith", activeTabInput.uri, "nvmStudio.hexedit");
 	}
 }
 
@@ -205,7 +205,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		vscode.workspace.onDidChangeConfiguration(e => {
 			if (
 				e.affectsConfiguration("nvmstudio.nvm.workspaceRoots") ||
-				e.affectsConfiguration("hexeditor.nvm.workspaceRoots")
+				e.affectsConfiguration("nvmstudio.nvm.workspaceRoots")
 			) {
 				invalidateDependencyResolver();
 			}

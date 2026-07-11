@@ -10,8 +10,8 @@
 
 import * as vscode from "vscode";
 
-const SELECTED_KEY = "hexeditor.nvm.blocks.selectedColumns";
-const ARRANGEMENT_KEY = "hexeditor.nvm.blocks.arrangement";
+const SELECTED_KEY = "nvmstudio.nvm.blocks.selectedColumns";
+const ARRANGEMENT_KEY = "nvmstudio.nvm.blocks.arrangement";
 
 export class BlockViewConfig {
 	private readonly _onDidChange = new vscode.EventEmitter<void>();

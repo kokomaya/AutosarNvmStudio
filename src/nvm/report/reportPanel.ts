@@ -31,7 +31,7 @@ export async function openReportPreview(
 
 	if (!currentPanel) {
 		currentPanel = vscode.window.createWebviewPanel(
-			"hexEditor.nvmReport",
+			"nvmStudio.nvmReport",
 			`NVM Report — ${report.fileName}`,
 			vscode.ViewColumn.Beside,
 			{ enableScripts: true, retainContextWhenHidden: true },

@@ -9,7 +9,7 @@
  * places to store it have opposite trade-offs, so we use BOTH:
  *
  *  - **Portable layer** — a *root-relative* path saved to the workspace settings
- *    (`hexeditor.nvm.fileChoices`). It can be committed and shared; on another
+ *    (`nvmstudio.nvm.fileChoices`). It can be committed and shared; on another
  *    machine it still resolves as long as the workspace root maps to the same
  *    tree, even though the absolute path differs per user.
  *  - **Machine-local cache** — the resolved *absolute* path in `workspaceState`
@@ -23,7 +23,7 @@
 
 import * as vscode from "vscode";
 
-const STATE_KEY = "hexeditor.nvm.fileChoices";
+const STATE_KEY = "nvmstudio.nvm.fileChoices";
 const SETTING_SECTION = "nvmstudio";
 const SETTING_KEY = "nvm.fileChoices";
 

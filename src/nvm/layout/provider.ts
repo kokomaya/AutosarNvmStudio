@@ -41,7 +41,7 @@ export interface LayoutConfig {
 	/**
 	 * Path to an **external engine script** (relative to the descriptor / dump),
 	 * e.g. `"./vectorFeeV3.engine.js"`. Desktop-only and gated behind Workspace
-	 * Trust + the `hexeditor.nvm.allowExternalEngines` setting + a per-file
+	 * Trust + the `nvmstudio.nvm.allowExternalEngines` setting + a per-file
 	 * confirmation, because it executes workspace JavaScript. See
 	 * `src/nvm/layout/externalEngine.ts`.
 	 */

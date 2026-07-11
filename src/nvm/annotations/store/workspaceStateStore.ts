@@ -11,7 +11,7 @@ import * as vscode from "vscode";
 import { AnnotationSet, coerceAnnotationSet, emptyAnnotationSet } from "../model";
 import { AnnotationStore } from "./annotationStore";
 
-const KEY_PREFIX = "hexeditor.nvm.annotations:";
+const KEY_PREFIX = "nvmstudio.nvm.annotations:";
 
 export class WorkspaceStateStore implements AnnotationStore {
 	constructor(private readonly context: vscode.ExtensionContext) {}

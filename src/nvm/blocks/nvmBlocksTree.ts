@@ -7,7 +7,7 @@
  * (offset/length/name plus the neutral `group`/`sequence`/`identity`/
  * `attributes` fields) and delegates layout to a swappable
  * {@link BlockArrangement}. Selecting a block jumps the hex editor to it
- * (reusing the shared `hexEditor.nvm.jumpTo` command).
+ * (reusing the shared `nvmStudio.nvm.jumpTo` command).
  */
 
 import * as vscode from "vscode";

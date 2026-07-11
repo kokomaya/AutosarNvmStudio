@@ -161,7 +161,7 @@ export function registerNvmStudioView(
 	annotations: AnnotationService,
 ): vscode.Disposable[] {
 	const provider = new NvmStudioTree(registry, annotations);
-	const view = vscode.window.createTreeView("hexEditor.nvmStudio", {
+	const view = vscode.window.createTreeView("nvmStudio.annotations", {
 		treeDataProvider: provider,
 		showCollapseAll: true,
 	});

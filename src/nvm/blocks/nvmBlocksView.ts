@@ -22,7 +22,7 @@ export function registerNvmBlocksView(
 ): vscode.Disposable[] {
 	const config = new BlockViewConfig(workspaceState);
 	const provider = new NvmBlocksTree(registry, config);
-	const view = vscode.window.createTreeView("hexEditor.nvmBlocks", {
+	const view = vscode.window.createTreeView("nvmStudio.nvmBlocks", {
 		treeDataProvider: provider,
 		showCollapseAll: true,
 	});

@@ -12,7 +12,7 @@ import * as vscode from "vscode";
 import { coerceViewSet, emptyViewSet, NvmCustomViewSet } from "../model";
 import { CustomViewStore } from "./customViewStore";
 
-const KEY = "hexeditor.nvm.customViews.templates";
+const KEY = "nvmstudio.nvm.customViews.templates";
 
 export class TemplateViewStore implements CustomViewStore {
 	constructor(private readonly context: vscode.ExtensionContext) {}
